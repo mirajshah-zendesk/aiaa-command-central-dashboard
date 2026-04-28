@@ -1,0 +1,9 @@
+[project]
+name = "streamlit-dashboard"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "snowflake-connector-python>=3.3.0",
+    "streamlit>=1.53.0",
+]
