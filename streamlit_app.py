@@ -532,32 +532,38 @@ else:
                 current = latest[metric_name]
                 current_date = pd.to_datetime(latest['Date'])
 
-                # Ensure scorecard_df has Date as datetime
+                # Ensure scorecard_df has Date as datetime and is sorted
                 scorecard_df_dated = scorecard_df.copy()
                 scorecard_df_dated['Date'] = pd.to_datetime(scorecard_df_dated['Date'])
+                scorecard_df_dated = scorecard_df_dated.sort_values('Date')
 
-                # WoW change (1 week back)
+                # Helper to find closest date
+                def find_closest_value(target_date, df):
+                    """Find the value for the closest date to target_date"""
+                    past_dates = df[df['Date'] <= target_date]
+                    if len(past_dates) > 0:
+                        closest_row = past_dates.iloc[-1]  # Most recent date before or equal to target
+                        return closest_row[metric_name]
+                    return None
+
+                # WoW change (1 week back - closest to 7 days ago)
                 wow_change = None
                 one_week_ago = current_date - pd.Timedelta(days=7)
-                prev_week_data = scorecard_df_dated[scorecard_df_dated['Date'] == one_week_ago]
-                if len(prev_week_data) > 0:
-                    prev_week = prev_week_data.iloc[0][metric_name]
-                    if prev_week != 0 and not pd.isna(prev_week):
-                        wow_change = ((current - prev_week) / prev_week) * 100
+                prev_week = find_closest_value(one_week_ago, scorecard_df_dated)
+                if prev_week is not None and prev_week != 0 and not pd.isna(prev_week):
+                    wow_change = ((current - prev_week) / prev_week) * 100
 
-                # 4-week change (28 days back)
+                # 4-week change (28 days back - closest to 28 days ago)
                 four_week_change = None
                 four_weeks_ago = current_date - pd.Timedelta(days=28)
-                four_week_data = scorecard_df_dated[scorecard_df_dated['Date'] == four_weeks_ago]
-                if len(four_week_data) > 0:
-                    four_week_val = four_week_data.iloc[0][metric_name]
-                    if four_week_val != 0 and not pd.isna(four_week_val):
-                        four_week_change = ((current - four_week_val) / four_week_val) * 100
+                four_week_val = find_closest_value(four_weeks_ago, scorecard_df_dated)
+                if four_week_val is not None and four_week_val != 0 and not pd.isna(four_week_val):
+                    four_week_change = ((current - four_week_val) / four_week_val) * 100
 
                 # QTD change (quarter-to-date)
                 qtd_change = None
                 quarter_start = pd.Timestamp(current_date.year, ((current_date.quarter - 1) * 3) + 1, 1)
-                qtd_data = scorecard_df_dated[scorecard_df_dated['Date'] >= quarter_start].sort_values('Date')
+                qtd_data = scorecard_df_dated[scorecard_df_dated['Date'] >= quarter_start]
                 if len(qtd_data) >= 2:
                     qtd_first = qtd_data.iloc[0][metric_name]
                     if qtd_first != 0 and not pd.isna(qtd_first):
