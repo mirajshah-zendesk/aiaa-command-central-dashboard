@@ -117,13 +117,9 @@ def calculate_scorecard_metrics(df):
         # "# instances" = # penetrated instances (Instance grain)
         metrics['# instances'] = snapshot[snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True]['INSTANCE_ACCOUNT_ID'].nunique()
 
-        # Eligible (60+ day tenure) - Use '60+ Day Tenure?' column if available
+        # Eligible (60+ day tenure) - Use '60+ Day Tenure?' column
         # This filter is used for both adopted AND eligible metrics
-        if '60+ Day Tenure?' in snapshot.columns:
-            eligible_tenure_filter = snapshot['60+ Day Tenure?'] == True
-        else:
-            # Fallback to TENURE_MONTHS >= 2
-            eligible_tenure_filter = snapshot['TENURE_MONTHS'] >= 2
+        eligible_tenure_filter = snapshot['60+ Day Tenure?'] == True
 
         # Adopted customers (CRM grain) - MUST have 60+ day tenure
         # Formula: COUNTUNIQUEIFS with ADOPTED=TRUE, PENETRATED=TRUE, 60+ Day Tenure=TRUE
