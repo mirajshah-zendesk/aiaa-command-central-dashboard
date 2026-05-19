@@ -527,32 +527,40 @@ else:
 
             st.markdown(f"**Latest Snapshot:** {latest_date} | **Total Snapshots:** {len(scorecard_df)}")
 
-            # Helper function to calculate changes
+            # Helper function to calculate changes using date-based lookups
             def calculate_changes(metric_name, format_type='number'):
                 current = latest[metric_name]
+                current_date = pd.to_datetime(latest['Date'])
+
+                # Ensure scorecard_df has Date as datetime
+                scorecard_df_dated = scorecard_df.copy()
+                scorecard_df_dated['Date'] = pd.to_datetime(scorecard_df_dated['Date'])
 
                 # WoW change (1 week back)
                 wow_change = None
-                if len(scorecard_df) >= 2:
-                    prev_week = scorecard_df.iloc[-2][metric_name]
-                    if prev_week != 0:
+                one_week_ago = current_date - pd.Timedelta(days=7)
+                prev_week_data = scorecard_df_dated[scorecard_df_dated['Date'] == one_week_ago]
+                if len(prev_week_data) > 0:
+                    prev_week = prev_week_data.iloc[0][metric_name]
+                    if prev_week != 0 and not pd.isna(prev_week):
                         wow_change = ((current - prev_week) / prev_week) * 100
 
-                # 4-week change
+                # 4-week change (28 days back)
                 four_week_change = None
-                if len(scorecard_df) >= 5:
-                    four_weeks_ago = scorecard_df.iloc[-5][metric_name]
-                    if four_weeks_ago != 0:
-                        four_week_change = ((current - four_weeks_ago) / four_weeks_ago) * 100
+                four_weeks_ago = current_date - pd.Timedelta(days=28)
+                four_week_data = scorecard_df_dated[scorecard_df_dated['Date'] == four_weeks_ago]
+                if len(four_week_data) > 0:
+                    four_week_val = four_week_data.iloc[0][metric_name]
+                    if four_week_val != 0 and not pd.isna(four_week_val):
+                        four_week_change = ((current - four_week_val) / four_week_val) * 100
 
                 # QTD change (quarter-to-date)
                 qtd_change = None
-                current_date = pd.to_datetime(latest['Date'])
                 quarter_start = pd.Timestamp(current_date.year, ((current_date.quarter - 1) * 3) + 1, 1)
-                qtd_data = scorecard_df[pd.to_datetime(scorecard_df['Date']) >= quarter_start]
+                qtd_data = scorecard_df_dated[scorecard_df_dated['Date'] >= quarter_start].sort_values('Date')
                 if len(qtd_data) >= 2:
                     qtd_first = qtd_data.iloc[0][metric_name]
-                    if qtd_first != 0:
+                    if qtd_first != 0 and not pd.isna(qtd_first):
                         qtd_change = ((current - qtd_first) / qtd_first) * 100
 
                 # Format current value
