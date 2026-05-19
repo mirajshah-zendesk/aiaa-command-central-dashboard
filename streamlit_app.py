@@ -644,7 +644,7 @@ else:
                 if col in display_df.columns:
                     display_df[col] = display_df[col].apply(lambda x: f"{x:.1f}%")
 
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, height=400)
 
             # Download
             st.download_button(
@@ -672,7 +672,7 @@ else:
         selected_columns = st.multiselect("Select columns", all_columns, default=default_cols if default_cols else all_columns[:10])
 
         if selected_columns:
-            st.dataframe(gdf[selected_columns].head(1000), use_container_width=True, hide_index=True, height=500)
+            st.dataframe(gdf[selected_columns].head(1000), use_container_width=True, height=500)
 
     with tab4:
         st.subheader("Metrics Guide")
