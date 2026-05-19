@@ -517,162 +517,122 @@ else:
 
     with tab1:
         st.subheader("AIAA Command Central Scorecard")
-        st.caption("All instances included (no ARR band filter)")
 
         if len(scorecard_df) == 0:
             st.warning("No data available for the selected filters.")
         else:
-            # Get latest metrics
+            # Get latest metrics and calculate changes
             latest = scorecard_df.iloc[-1]
             latest_date = latest['Date'].strftime('%Y-%m-%d') if isinstance(latest['Date'], pd.Timestamp) else str(latest['Date'])
 
             st.markdown(f"**Latest Snapshot:** {latest_date} | **Total Snapshots:** {len(scorecard_df)}")
 
-            # Business Metrics
-            st.markdown("### 📊 Business Metrics")
-            col1, col2 = st.columns(2)
+            # Helper function to calculate changes
+            def calculate_changes(metric_name, format_type='number'):
+                current = latest[metric_name]
 
-            with col1:
-                ar_util = latest['AR Utilization Run Rate']
-                st.metric(
-                    "AR Utilization Run Rate",
-                    f"{ar_util:.1%}",
-                    help="Average automated resolution rate (instances with > 0 ARs)"
-                )
-
-            with col2:
+                # WoW change (1 week back)
+                wow_change = None
                 if len(scorecard_df) >= 2:
-                    prev_ar = scorecard_df.iloc[-2]['AR Utilization Run Rate']
-                    delta_ar = ((ar_util - prev_ar) / prev_ar * 100) if prev_ar > 0 else 0
-                    st.metric(
-                        "AR Util WoW Change",
-                        f"{delta_ar:+.1f}%",
-                        help="Week-over-week change"
-                    )
+                    prev_week = scorecard_df.iloc[-2][metric_name]
+                    if prev_week != 0:
+                        wow_change = ((current - prev_week) / prev_week) * 100
 
-            st.divider()
+                # 4-week change
+                four_week_change = None
+                if len(scorecard_df) >= 5:
+                    four_weeks_ago = scorecard_df.iloc[-5][metric_name]
+                    if four_weeks_ago != 0:
+                        four_week_change = ((current - four_weeks_ago) / four_weeks_ago) * 100
 
-            # Impact Metrics
-            st.markdown("### 🎯 Impact Metrics")
+                # QTD change (quarter-to-date)
+                qtd_change = None
+                current_date = pd.to_datetime(latest['Date'])
+                quarter_start = pd.Timestamp(current_date.year, ((current_date.quarter - 1) * 3) + 1, 1)
+                qtd_data = scorecard_df[pd.to_datetime(scorecard_df['Date']) >= quarter_start]
+                if len(qtd_data) >= 2:
+                    qtd_first = qtd_data.iloc[0][metric_name]
+                    if qtd_first != 0:
+                        qtd_change = ((current - qtd_first) / qtd_first) * 100
 
-            col1, col2, col3, col4 = st.columns(4)
+                # Format current value
+                if format_type == 'percent':
+                    current_str = f"{current:.1%}"
+                elif format_type == 'percent_decimal':
+                    current_str = f"{current:.1f}%"
+                else:
+                    current_str = f"{int(current):,}"
 
-            with col1:
-                st.metric("# customers", f"{int(latest['# customers']):,}", help="Penetrated customers (CRM grain)")
+                # Format changes
+                wow_str = f"{wow_change:+.1f}%" if wow_change is not None else "—"
+                four_week_str = f"{four_week_change:+.1f}%" if four_week_change is not None else "—"
+                qtd_str = f"{qtd_change:+.1f}%" if qtd_change is not None else "—"
 
-            with col2:
-                st.metric("# instances", f"{int(latest['# instances']):,}", help="Penetrated instances")
+                return current_str, wow_str, four_week_str, qtd_str
 
-            with col3:
-                st.metric("Adopted customers", f"{int(latest['Adopted customers']):,}")
+            # Define metrics by category
+            metrics_config = {
+                "📊 Business Metrics": [
+                    ("AR Utilization Run Rate", "AR Utilization Run Rate", "percent"),
+                ],
+                "🎯 Impact Metrics": [
+                    ("# Customers", "# customers", "number"),
+                    ("# Instances", "# instances", "number"),
+                    ("Adopted Customers", "Adopted customers", "number"),
+                    ("Adopted Instances", "Adopted instances", "number"),
+                    ("Adopted Customers ($100k+)", "Adopted customers ($100k+)", "number"),
+                    ("Eligible Customers", "Eligible customers", "number"),
+                    ("Eligible Customers ($100k+)", "Eligible customers ($100k+)", "number"),
+                    ("Eligible Instances", "Eligible instances", "number"),
+                ],
+                "📈 Adoption Rates": [
+                    ("Customer Adoption %", "Customer adoption %", "percent_decimal"),
+                    ("Customer Adoption % ($100k+)", "Customer adoption % ($100k+)", "percent_decimal"),
+                    ("Instance Adoption %", "Instance adoption %", "percent_decimal"),
+                ],
+                "🤖 AR Rates & Control": [
+                    ("Median AR Rate", "Median AR Rate", "percent"),
+                    ("Median AR Rate - Email", "Median AR Rate - Email", "percent"),
+                    ("Median AR Rate - Messaging", "Median AR Rate - Messaging", "percent"),
+                    ("# Instances with Integrations", "# instances with integrations", "number"),
+                    ("Instances AR 0-30%", "Instances AR 0-30%", "number"),
+                    ("Instances AR 30%+", "Instances AR 30%+", "number"),
+                    ("Total ARs (28d)", "Total ARs (28d)", "number"),
+                ],
+                "🚀 Bot Deployment": [
+                    ("Total Active Instances with Bot", "Total active instances with bot deployed", "number"),
+                    ("Bots Deployed This Week", "Bots deployed this week", "number"),
+                    ("Bot Deployed Share %", "Bot deployed share %", "percent"),
+                    ("Gen3 Instances", "Gen3 Instances", "number"),
+                    ("Actual Go-Live (Past Week)", "Actual Go-Live (past week)", "number"),
+                    ("Projected Go-Live (Next Week)", "Projected Go-Live (next week)", "number"),
+                ],
+                "⭐ Customer Satisfaction": [
+                    ("Top Box BSAT %", "Top Box BSAT %", "percent_decimal"),
+                    ("# Top Box Responses", "# Top Box Responses", "number"),
+                    ("# Responses", "# Responses", "number"),
+                ],
+            }
 
-            with col4:
-                st.metric("Adopted instances", f"{int(latest['Adopted instances']):,}")
+            # Display metrics as tables by category
+            for category, metrics in metrics_config.items():
+                st.markdown(f"### {category}")
 
-            col1, col2, col3, col4 = st.columns(4)
+                # Build table data
+                table_data = []
+                for display_name, metric_key, format_type in metrics:
+                    current, wow, four_week, qtd = calculate_changes(metric_key, format_type)
+                    table_data.append({
+                        "Metric": display_name,
+                        "Current Value": current,
+                        "WoW Change": wow,
+                        "4-Week Change": four_week,
+                        "QTD Change": qtd
+                    })
 
-            with col1:
-                st.metric("Adopted customers ($100k+)", f"{int(latest['Adopted customers ($100k+)']):,}")
-
-            with col2:
-                st.metric("Eligible customers", f"{int(latest['Eligible customers']):,}", help="60+ day tenure")
-
-            with col3:
-                st.metric("Eligible customers ($100k+)", f"{int(latest['Eligible customers ($100k+)']):,}")
-
-            with col4:
-                st.metric("Eligible instances", f"{int(latest['Eligible instances']):,}", help="60+ day tenure")
-
-            st.divider()
-
-            # Adoption Rates
-            st.markdown("### 📈 Adoption Rates")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Customer adoption", f"{latest['Customer adoption %']:.1f}%")
-
-            with col2:
-                st.metric("Customer adoption ($100k+)", f"{latest['Customer adoption % ($100k+)']:.1f}%")
-
-            with col3:
-                st.metric("Instance adoption", f"{latest['Instance adoption %']:.1f}%")
-
-            st.divider()
-
-            # AR Rates
-            st.markdown("### 🤖 AR Rates & Control Metrics")
-
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric("Median AR Rate", f"{latest['Median AR Rate']:.1%}")
-
-            with col2:
-                st.metric("Median AR - Email", f"{latest['Median AR Rate - Email']:.1%}")
-
-            with col3:
-                st.metric("Median AR - Messaging", f"{latest['Median AR Rate - Messaging']:.1%}")
-
-            with col4:
-                st.metric("# instances with integrations", f"{int(latest['# instances with integrations']):,}")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Instances AR 0-30%", f"{int(latest['Instances AR 0-30%']):,}")
-
-            with col2:
-                st.metric("Instances AR 30%+", f"{int(latest['Instances AR 30%+']):,}")
-
-            with col3:
-                st.metric("Total ARs (28d)", f"{int(latest['Total ARs (28d)']):,}")
-
-            st.divider()
-
-            # Bot Deployment
-            st.markdown("### 🚀 Bot Deployment")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Total active instances with bot deployed", f"{int(latest['Total active instances with bot deployed']):,}")
-
-            with col2:
-                st.metric("Bots deployed this week", f"{int(latest['Bots deployed this week']):,}")
-
-            with col3:
-                st.metric("Bot deployed share %", f"{latest['Bot deployed share %']:.1%}")
-                st.caption(f"Numerator (Bot Interactions): {int(latest['Bot deployed share - numerator']):,}")
-                st.caption(f"Denominator (Total Tickets): {int(latest['Bot deployed share - denominator']):,}")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Gen3 Instances", f"{int(latest['Gen3 Instances']):,}")
-
-            with col2:
-                st.metric("Actual Go-Live (past week)", f"{int(latest['Actual Go-Live (past week)']):,}")
-
-            with col3:
-                st.metric("Projected Go-Live (next week)", f"{int(latest['Projected Go-Live (next week)']):,}")
-
-            st.divider()
-
-            # BSAT
-            st.markdown("### ⭐ Customer Satisfaction (BSAT)")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Top Box BSAT", f"{latest['Top Box BSAT %']:.1f}%")
-
-            with col2:
-                st.metric("# top box responses", f"{int(latest['# Top Box Responses']):,}")
-
-            with col3:
-                st.metric("# responses", f"{int(latest['# Responses']):,}")
+                # Display as dataframe
+                metrics_table = pd.DataFrame(table_data)
+                st.dataframe(metrics_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 400))
 
             st.divider()
 
