@@ -420,9 +420,10 @@ with st.sidebar:
         st.markdown("**AI Agents Product**")
         ai_product_options = st.multiselect(
             "Select product type(s)",
-            options=['AI Agents Advanced Penetrated', 'AI Agents Paid Penetrated'],
-            default=['AI Agents Advanced Penetrated', 'AI Agents Paid Penetrated'],
-            label_visibility="collapsed"
+            options=['AI Agents Advanced', 'AI Agents Essentials'],
+            default=['AI Agents Advanced', 'AI Agents Essentials'],
+            label_visibility="collapsed",
+            help="Advanced = INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED = TRUE; Essentials = Advanced is FALSE but INSTANCE_IS_AI_AGENTS_PAID_PENETRATED = TRUE"
         )
 
 # Main content
@@ -476,14 +477,25 @@ else:
     if 'selected_responsibility' in locals() and selected_responsibility != 'All':
         gdf = gdf[gdf['RESPONSIBILITY'] == selected_responsibility]
 
-    # AI Agents Product filter (multi-select)
+    # AI Agents Product filter (multi-select with hierarchy)
     if 'ai_product_options' in locals() and len(ai_product_options) > 0:
-        # Build filter based on selected options
+        # Build filter based on selected options with hierarchy:
+        # - Advanced: INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED = TRUE
+        # - Essentials: Advanced = FALSE AND INSTANCE_IS_AI_AGENTS_PAID_PENETRATED = TRUE
         product_filter = pd.Series([False] * len(gdf), index=gdf.index)
-        if 'AI Agents Advanced Penetrated' in ai_product_options:
+
+        if 'AI Agents Advanced' in ai_product_options:
+            # Advanced takes precedence
             product_filter |= (gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)
-        if 'AI Agents Paid Penetrated' in ai_product_options:
-            product_filter |= (gdf['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+
+        if 'AI Agents Essentials' in ai_product_options:
+            # Essentials only if Advanced is False
+            essentials_filter = (
+                (gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False) &
+                (gdf['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+            )
+            product_filter |= essentials_filter
+
         gdf = gdf[product_filter]
 
     # Calculate scorecard metrics
