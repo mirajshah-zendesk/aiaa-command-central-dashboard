@@ -549,7 +549,7 @@ else:
                 scorecard_df_dated = scorecard_df.copy()
                 scorecard_df_dated['Date'] = pd.to_datetime(scorecard_df_dated['Date'])
 
-                # Determine if we should use percentage point change (for percentages) or relative % change (for counts)
+                # Determine if we should use percentage point change (for percentages) or absolute change (for counts)
                 is_percentage_metric = format_type in ['percent', 'percent_decimal']
 
                 # WoW change (exact match for 7 days ago)
@@ -560,12 +560,11 @@ else:
                     prev_week = prev_week_data.iloc[0][metric_name]
                     if not pd.isna(prev_week):
                         if is_percentage_metric:
-                            # Percentage point change (absolute difference)
+                            # Percentage point change (for % metrics)
                             wow_change = (current - prev_week) * 100
                         else:
-                            # Relative percentage change
-                            if prev_week != 0:
-                                wow_change = ((current - prev_week) / prev_week) * 100
+                            # Absolute change (for count metrics)
+                            wow_change = current - prev_week
 
                 # 4-week change (exact match for 28 days ago)
                 four_week_change = None
@@ -575,12 +574,11 @@ else:
                     four_week_val = four_week_data.iloc[0][metric_name]
                     if not pd.isna(four_week_val):
                         if is_percentage_metric:
-                            # Percentage point change (absolute difference)
+                            # Percentage point change (for % metrics)
                             four_week_change = (current - four_week_val) * 100
                         else:
-                            # Relative percentage change
-                            if four_week_val != 0:
-                                four_week_change = ((current - four_week_val) / four_week_val) * 100
+                            # Absolute change (for count metrics)
+                            four_week_change = current - four_week_val
 
                 # QTD change (quarter-to-date)
                 qtd_change = None
@@ -590,12 +588,11 @@ else:
                     qtd_first = qtd_data.iloc[0][metric_name]
                     if not pd.isna(qtd_first):
                         if is_percentage_metric:
-                            # Percentage point change (absolute difference)
+                            # Percentage point change (for % metrics)
                             qtd_change = (current - qtd_first) * 100
                         else:
-                            # Relative percentage change
-                            if qtd_first != 0:
-                                qtd_change = ((current - qtd_first) / qtd_first) * 100
+                            # Absolute change (for count metrics)
+                            qtd_change = current - qtd_first
 
                 # Format current value
                 if format_type == 'percent':
@@ -605,11 +602,17 @@ else:
                 else:
                     current_str = f"{int(current):,}"
 
-                # Format changes (pp = percentage points for percentage metrics, % for counts)
-                change_suffix = "pp" if is_percentage_metric else "%"
-                wow_str = f"{wow_change:+.1f}{change_suffix}" if wow_change is not None else "—"
-                four_week_str = f"{four_week_change:+.1f}{change_suffix}" if four_week_change is not None else "—"
-                qtd_str = f"{qtd_change:+.1f}{change_suffix}" if qtd_change is not None else "—"
+                # Format changes
+                if is_percentage_metric:
+                    # Percentage point change (pp)
+                    wow_str = f"{wow_change:+.1f}pp" if wow_change is not None else "—"
+                    four_week_str = f"{four_week_change:+.1f}pp" if four_week_change is not None else "—"
+                    qtd_str = f"{qtd_change:+.1f}pp" if qtd_change is not None else "—"
+                else:
+                    # Absolute change (no suffix, just the number with sign)
+                    wow_str = f"{wow_change:+,.0f}" if wow_change is not None else "—"
+                    four_week_str = f"{four_week_change:+,.0f}" if four_week_change is not None else "—"
+                    qtd_str = f"{qtd_change:+,.0f}" if qtd_change is not None else "—"
 
                 return current_str, wow_str, four_week_str, qtd_str
 
