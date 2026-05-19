@@ -630,8 +630,9 @@ else:
                         "QTD Change": qtd
                     })
 
-                # Display as dataframe
+                # Display as dataframe with Metric as index to hide row numbers
                 metrics_table = pd.DataFrame(table_data)
+                metrics_table = metrics_table.set_index('Metric')
                 st.dataframe(metrics_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 400))
 
             st.divider()
