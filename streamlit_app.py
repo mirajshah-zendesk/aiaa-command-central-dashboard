@@ -319,6 +319,49 @@ def calculate_scorecard_metrics(df):
 
     return pd.DataFrame(metrics_list)
 
+def calculate_cohort_metrics(df):
+    """
+    Calculate customer counts by cohort for each snapshot date
+    Returns a dataframe with Date, Cohort, and # Customers
+    """
+    # Ensure date column is datetime
+    df['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(df['SOURCE_SNAPSHOT_DATE'])
+
+    # Sort by date
+    df = df.sort_values('SOURCE_SNAPSHOT_DATE')
+
+    # Get unique dates
+    dates = df['SOURCE_SNAPSHOT_DATE'].unique()
+
+    cohort_metrics_list = []
+
+    for date in dates:
+        snapshot = df[df['SOURCE_SNAPSHOT_DATE'] == date].copy()
+
+        # Filter for penetrated customers only
+        penetrated_filter = snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True
+        snapshot_penetrated = snapshot[penetrated_filter]
+
+        # Check if COHORT column exists
+        if 'COHORT' not in snapshot_penetrated.columns:
+            continue
+
+        # Group by cohort and count unique CRM accounts
+        cohort_counts = snapshot_penetrated.groupby('COHORT')['CRM_ACCOUNT_ID'].nunique().reset_index()
+        cohort_counts.columns = ['Cohort', '# Customers']
+        cohort_counts['Date'] = date
+
+        cohort_metrics_list.append(cohort_counts)
+
+    if len(cohort_metrics_list) == 0:
+        return pd.DataFrame(columns=['Date', 'Cohort', '# Customers'])
+
+    # Combine all snapshots
+    cohort_df = pd.concat(cohort_metrics_list, ignore_index=True)
+    cohort_df = cohort_df[['Date', 'Cohort', '# Customers']]
+
+    return cohort_df
+
 # Sidebar for file upload
 with st.sidebar:
     st.header(":material/database: Data Source")
@@ -504,9 +547,10 @@ else:
             st.stop()
 
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
+        ":material/groups: Cohort Analysis",
         ":material/table: Data Explorer",
         ":material/info: Metrics Guide"
     ])
@@ -717,6 +761,120 @@ else:
             st.line_chart(scorecard_df, x='Date', y=['# instances', 'Adopted instances'], height=300)
 
     with tab3:
+        st.subheader("Cohort Analysis")
+
+        # Calculate cohort metrics
+        with st.spinner("Calculating cohort metrics..."):
+            try:
+                cohort_df = calculate_cohort_metrics(gdf)
+            except Exception as e:
+                st.error(f"Error calculating cohort metrics: {e}")
+                st.exception(e)
+                st.stop()
+
+        if len(cohort_df) == 0:
+            st.warning("No cohort data available. Please ensure the 'COHORT' column exists in your data.")
+        else:
+            # Get latest date
+            latest_date = cohort_df['Date'].max()
+            latest_cohorts = cohort_df[cohort_df['Date'] == latest_date].copy()
+
+            st.markdown(f"**Latest Snapshot:** {latest_date.strftime('%Y-%m-%d') if isinstance(latest_date, pd.Timestamp) else str(latest_date)}")
+
+            # Helper function to calculate cohort changes
+            def calculate_cohort_changes(cohort_name):
+                cohort_data = cohort_df[cohort_df['Cohort'] == cohort_name].copy()
+                cohort_data['Date'] = pd.to_datetime(cohort_data['Date'])
+                cohort_data = cohort_data.sort_values('Date')
+
+                if len(cohort_data) == 0:
+                    return None, None, None, None
+
+                # Get current value
+                current_row = cohort_data[cohort_data['Date'] == latest_date]
+                if len(current_row) == 0:
+                    return None, None, None, None
+
+                current = current_row.iloc[0]['# Customers']
+
+                # WoW change (exact match for 7 days ago)
+                wow_change = None
+                one_week_ago = latest_date - pd.Timedelta(days=7)
+                prev_week_data = cohort_data[cohort_data['Date'] == one_week_ago]
+                if len(prev_week_data) > 0:
+                    prev_week = prev_week_data.iloc[0]['# Customers']
+                    if not pd.isna(prev_week):
+                        wow_change = current - prev_week
+
+                # 4-week change (exact match for 28 days ago)
+                four_week_change = None
+                four_weeks_ago = latest_date - pd.Timedelta(days=28)
+                four_week_data = cohort_data[cohort_data['Date'] == four_weeks_ago]
+                if len(four_week_data) > 0:
+                    four_week_val = four_week_data.iloc[0]['# Customers']
+                    if not pd.isna(four_week_val):
+                        four_week_change = current - four_week_val
+
+                # QTD change (quarter-to-date)
+                qtd_change = None
+                quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
+                qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
+                if len(qtd_data) >= 2:
+                    qtd_first = qtd_data.iloc[0]['# Customers']
+                    if not pd.isna(qtd_first):
+                        qtd_change = current - qtd_first
+
+                # Format values
+                current_str = f"{int(current):,}"
+                wow_str = f"{wow_change:+,.0f}" if wow_change is not None else "—"
+                four_week_str = f"{four_week_change:+,.0f}" if four_week_change is not None else "—"
+                qtd_str = f"{qtd_change:+,.0f}" if qtd_change is not None else "—"
+
+                return current_str, wow_str, four_week_str, qtd_str
+
+            # Build cohort table
+            st.markdown("### 📊 Customer Counts by Cohort")
+
+            table_data = []
+            for cohort in sorted(latest_cohorts['Cohort'].unique()):
+                current, wow, four_week, qtd = calculate_cohort_changes(cohort)
+                if current is not None:
+                    table_data.append({
+                        "Cohort": cohort,
+                        "Current # Customers": current,
+                        "WoW Change": wow,
+                        "4-Week Change": four_week,
+                        "QTD Change": qtd
+                    })
+
+            if len(table_data) > 0:
+                cohort_table = pd.DataFrame(table_data)
+                cohort_table = cohort_table.set_index('Cohort')
+                st.dataframe(cohort_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 600))
+            else:
+                st.warning("No cohort data available for the latest snapshot.")
+
+            st.divider()
+
+            # Time series table
+            st.markdown("### 📅 Cohort Trends Over Time")
+
+            # Pivot the data for better visualization
+            cohort_pivot = cohort_df.pivot(index='Date', columns='Cohort', values='# Customers')
+            cohort_pivot = cohort_pivot.sort_index(ascending=False)
+            cohort_pivot.index = pd.to_datetime(cohort_pivot.index).strftime('%Y-%m-%d')
+
+            st.dataframe(cohort_pivot, use_container_width=True, height=400)
+
+            # Download
+            st.download_button(
+                label=":material/download: Download Cohort Data (CSV)",
+                data=cohort_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"aiaa_cohort_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+
+    with tab4:
         st.subheader("Data Explorer")
 
         all_columns = gdf.columns.tolist()
@@ -728,7 +886,7 @@ else:
         if selected_columns:
             st.dataframe(gdf[selected_columns].head(1000), use_container_width=True, height=500)
 
-    with tab4:
+    with tab5:
         st.subheader("Metrics Guide")
         st.markdown("""
         ### Key Formula Details
