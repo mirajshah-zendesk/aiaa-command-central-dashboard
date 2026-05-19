@@ -378,7 +378,7 @@ with st.sidebar:
         st.divider()
         st.header("Filters")
 
-        st.info("**Note:** Dashboard includes ALL instances (no ARR band filter) to match Excel formulas exactly.")
+        st.info("**Note:** Apply filters below to segment your data. Default shows all instances.")
 
         gdf = st.session_state.global_data.copy()
         gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
@@ -395,12 +395,35 @@ with st.sidebar:
                 max_value=max_date
             )
 
-        # Region filter (additional filter on top of ARR band)
+        # Region filter
         if 'CRM_REGION' in gdf.columns:
             regions = ['All'] + sorted(gdf['CRM_REGION'].dropna().unique().tolist())
             selected_region = st.selectbox("Region", regions)
         else:
             selected_region = 'All'
+
+        # ARR Band filter
+        if 'CRM_ARR_BAND_BROAD' in gdf.columns:
+            arr_bands = ['All'] + sorted(gdf['CRM_ARR_BAND_BROAD'].dropna().unique().tolist())
+            selected_arr_band = st.selectbox("ARR Band", arr_bands)
+        else:
+            selected_arr_band = 'All'
+
+        # Responsibility filter
+        if 'RESPONSIBILITY' in gdf.columns:
+            responsibilities = ['All'] + sorted(gdf['RESPONSIBILITY'].dropna().unique().tolist())
+            selected_responsibility = st.selectbox("Responsibility", responsibilities)
+        else:
+            selected_responsibility = 'All'
+
+        # AI Agents Product filter (multi-select)
+        st.markdown("**AI Agents Product**")
+        ai_product_options = st.multiselect(
+            "Select product type(s)",
+            options=['AI Agents Advanced Penetrated', 'AI Agents Paid Penetrated'],
+            default=['AI Agents Advanced Penetrated', 'AI Agents Paid Penetrated'],
+            label_visibility="collapsed"
+        )
 
 # Main content
 if st.session_state.global_data is None:
@@ -439,13 +462,29 @@ else:
     gdf = st.session_state.global_data.copy()
     gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
 
-    # Apply additional filters (ARR band filter is applied in calculation function)
+    # Apply filters
     if 'date_range' in locals() and len(date_range) == 2:
         gdf = gdf[(gdf['SOURCE_SNAPSHOT_DATE'] >= pd.to_datetime(date_range[0])) &
                   (gdf['SOURCE_SNAPSHOT_DATE'] <= pd.to_datetime(date_range[1]))]
 
     if 'selected_region' in locals() and selected_region != 'All':
         gdf = gdf[gdf['CRM_REGION'] == selected_region]
+
+    if 'selected_arr_band' in locals() and selected_arr_band != 'All':
+        gdf = gdf[gdf['CRM_ARR_BAND_BROAD'] == selected_arr_band]
+
+    if 'selected_responsibility' in locals() and selected_responsibility != 'All':
+        gdf = gdf[gdf['RESPONSIBILITY'] == selected_responsibility]
+
+    # AI Agents Product filter (multi-select)
+    if 'ai_product_options' in locals() and len(ai_product_options) > 0:
+        # Build filter based on selected options
+        product_filter = pd.Series([False] * len(gdf), index=gdf.index)
+        if 'AI Agents Advanced Penetrated' in ai_product_options:
+            product_filter |= (gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)
+        if 'AI Agents Paid Penetrated' in ai_product_options:
+            product_filter |= (gdf['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+        gdf = gdf[product_filter]
 
     # Calculate scorecard metrics
     with st.spinner("Calculating scorecard metrics..."):
