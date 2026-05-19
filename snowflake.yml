@@ -8,4 +8,4 @@ entities:
     pages_dir: null
     stage: streamlit
     database: PRESENTATION
-    schema: INSIGHTS
+    schema: SUCCESS
