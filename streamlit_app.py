@@ -486,7 +486,6 @@ else:
                 st.metric(
                     "AR Utilization Run Rate",
                     f"{ar_util:.1%}",
-                    border=True,
                     help="Average automated resolution rate (instances with > 0 ARs)"
                 )
 
@@ -497,7 +496,6 @@ else:
                     st.metric(
                         "AR Util WoW Change",
                         f"{delta_ar:+.1f}%",
-                        border=True,
                         help="Week-over-week change"
                     )
 
@@ -509,30 +507,30 @@ else:
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                st.metric("# customers", f"{int(latest['# customers']):,}", border=True, help="Penetrated customers (CRM grain)")
+                st.metric("# customers", f"{int(latest['# customers']):,}", help="Penetrated customers (CRM grain)")
 
             with col2:
-                st.metric("# instances", f"{int(latest['# instances']):,}", border=True, help="Penetrated instances")
+                st.metric("# instances", f"{int(latest['# instances']):,}", help="Penetrated instances")
 
             with col3:
-                st.metric("Adopted customers", f"{int(latest['Adopted customers']):,}", border=True)
+                st.metric("Adopted customers", f"{int(latest['Adopted customers']):,}")
 
             with col4:
-                st.metric("Adopted instances", f"{int(latest['Adopted instances']):,}", border=True)
+                st.metric("Adopted instances", f"{int(latest['Adopted instances']):,}")
 
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                st.metric("Adopted customers ($100k+)", f"{int(latest['Adopted customers ($100k+)']):,}", border=True)
+                st.metric("Adopted customers ($100k+)", f"{int(latest['Adopted customers ($100k+)']):,}")
 
             with col2:
-                st.metric("Eligible customers", f"{int(latest['Eligible customers']):,}", border=True, help="60+ day tenure")
+                st.metric("Eligible customers", f"{int(latest['Eligible customers']):,}", help="60+ day tenure")
 
             with col3:
-                st.metric("Eligible customers ($100k+)", f"{int(latest['Eligible customers ($100k+)']):,}", border=True)
+                st.metric("Eligible customers ($100k+)", f"{int(latest['Eligible customers ($100k+)']):,}")
 
             with col4:
-                st.metric("Eligible instances", f"{int(latest['Eligible instances']):,}", border=True, help="60+ day tenure")
+                st.metric("Eligible instances", f"{int(latest['Eligible instances']):,}", help="60+ day tenure")
 
             st.divider()
 
@@ -542,13 +540,13 @@ else:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Customer adoption", f"{latest['Customer adoption %']:.1f}%", border=True)
+                st.metric("Customer adoption", f"{latest['Customer adoption %']:.1f}%")
 
             with col2:
-                st.metric("Customer adoption ($100k+)", f"{latest['Customer adoption % ($100k+)']:.1f}%", border=True)
+                st.metric("Customer adoption ($100k+)", f"{latest['Customer adoption % ($100k+)']:.1f}%")
 
             with col3:
-                st.metric("Instance adoption", f"{latest['Instance adoption %']:.1f}%", border=True)
+                st.metric("Instance adoption", f"{latest['Instance adoption %']:.1f}%")
 
             st.divider()
 
@@ -558,27 +556,27 @@ else:
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                st.metric("Median AR Rate", f"{latest['Median AR Rate']:.1%}", border=True)
+                st.metric("Median AR Rate", f"{latest['Median AR Rate']:.1%}")
 
             with col2:
-                st.metric("Median AR - Email", f"{latest['Median AR Rate - Email']:.1%}", border=True)
+                st.metric("Median AR - Email", f"{latest['Median AR Rate - Email']:.1%}")
 
             with col3:
-                st.metric("Median AR - Messaging", f"{latest['Median AR Rate - Messaging']:.1%}", border=True)
+                st.metric("Median AR - Messaging", f"{latest['Median AR Rate - Messaging']:.1%}")
 
             with col4:
-                st.metric("# instances with integrations", f"{int(latest['# instances with integrations']):,}", border=True)
+                st.metric("# instances with integrations", f"{int(latest['# instances with integrations']):,}")
 
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Instances AR 0-30%", f"{int(latest['Instances AR 0-30%']):,}", border=True)
+                st.metric("Instances AR 0-30%", f"{int(latest['Instances AR 0-30%']):,}")
 
             with col2:
-                st.metric("Instances AR 30%+", f"{int(latest['Instances AR 30%+']):,}", border=True)
+                st.metric("Instances AR 30%+", f"{int(latest['Instances AR 30%+']):,}")
 
             with col3:
-                st.metric("Total ARs (28d)", f"{int(latest['Total ARs (28d)']):,}", border=True)
+                st.metric("Total ARs (28d)", f"{int(latest['Total ARs (28d)']):,}")
 
             st.divider()
 
@@ -588,26 +586,26 @@ else:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Total active instances with bot deployed", f"{int(latest['Total active instances with bot deployed']):,}", border=True)
+                st.metric("Total active instances with bot deployed", f"{int(latest['Total active instances with bot deployed']):,}")
 
             with col2:
-                st.metric("Bots deployed this week", f"{int(latest['Bots deployed this week']):,}", border=True)
+                st.metric("Bots deployed this week", f"{int(latest['Bots deployed this week']):,}")
 
             with col3:
-                st.metric("Bot deployed share %", f"{latest['Bot deployed share %']:.1%}", border=True)
+                st.metric("Bot deployed share %", f"{latest['Bot deployed share %']:.1%}")
                 st.caption(f"Numerator (Bot Interactions): {int(latest['Bot deployed share - numerator']):,}")
                 st.caption(f"Denominator (Total Tickets): {int(latest['Bot deployed share - denominator']):,}")
 
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Gen3 Instances", f"{int(latest['Gen3 Instances']):,}", border=True)
+                st.metric("Gen3 Instances", f"{int(latest['Gen3 Instances']):,}")
 
             with col2:
-                st.metric("Actual Go-Live (past week)", f"{int(latest['Actual Go-Live (past week)']):,}", border=True)
+                st.metric("Actual Go-Live (past week)", f"{int(latest['Actual Go-Live (past week)']):,}")
 
             with col3:
-                st.metric("Projected Go-Live (next week)", f"{int(latest['Projected Go-Live (next week)']):,}", border=True)
+                st.metric("Projected Go-Live (next week)", f"{int(latest['Projected Go-Live (next week)']):,}")
 
             st.divider()
 
@@ -617,13 +615,13 @@ else:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Top Box BSAT", f"{latest['Top Box BSAT %']:.1f}%", border=True)
+                st.metric("Top Box BSAT", f"{latest['Top Box BSAT %']:.1f}%")
 
             with col2:
-                st.metric("# top box responses", f"{int(latest['# Top Box Responses']):,}", border=True)
+                st.metric("# top box responses", f"{int(latest['# Top Box Responses']):,}")
 
             with col3:
-                st.metric("# responses", f"{int(latest['# Responses']):,}", border=True)
+                st.metric("# responses", f"{int(latest['# Responses']):,}")
 
             st.divider()
 
