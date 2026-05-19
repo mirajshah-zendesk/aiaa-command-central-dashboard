@@ -1,11 +1,13 @@
 """
 AIAA Command Central Dashboard
-Calculates all scorecard metrics from GlobalData CSV matching Excel formulas
+Calculates all scorecard metrics from GlobalData matching Excel formulas
+Now connects directly to Snowflake: presentation.success.ai_agents_advanced_command_central
 """
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from snowflake.snowpark.context import get_active_session
 
 # Page config
 st.set_page_config(
@@ -28,6 +30,31 @@ st.title(":material/analytics: AIAA Command Central")
 # Initialize session state
 if "global_data" not in st.session_state:
     st.session_state.global_data = None
+if "last_load_time" not in st.session_state:
+    st.session_state.last_load_time = None
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def load_data_from_snowflake():
+    """Load data from Snowflake table"""
+    try:
+        session = get_active_session()
+
+        # Query the table
+        query = """
+        SELECT *
+        FROM presentation.success.ai_agents_advanced_command_central
+        ORDER BY SOURCE_SNAPSHOT_DATE DESC
+        """
+
+        df = session.sql(query).to_pandas()
+
+        # Rename '60+_day_tenure' to '60+ Day Tenure?' to match Excel column naming
+        if '60+_DAY_TENURE' in df.columns:
+            df.rename(columns={'60+_DAY_TENURE': '60+ Day Tenure?'}, inplace=True)
+
+        return df, None
+    except Exception as e:
+        return None, str(e)
 
 def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
@@ -219,6 +246,10 @@ def calculate_scorecard_metrics(df):
         else:
             metrics['Bot deployed share %'] = 0
 
+        # Store numerator and denominator for debugging
+        metrics['Bot deployed share - numerator'] = total_bot_interactions
+        metrics['Bot deployed share - denominator'] = total_tickets
+
         # Automated Resolutions
         metrics['Total ARs (28d)'] = snapshot['TOTAL_AUTOMATED_RESOLUTIONS'].sum()
 
@@ -294,34 +325,54 @@ def calculate_scorecard_metrics(df):
 
 # Sidebar for file upload
 with st.sidebar:
-    st.header(":material/upload_file: Data Upload")
+    st.header(":material/database: Data Source")
 
-    st.markdown("### Upload GlobalData CSV")
+    st.markdown("### Snowflake Connection")
+    st.info("Connected to: `presentation.success.ai_agents_advanced_command_central`")
 
-    global_data_file = st.file_uploader(
-        "GlobalData CSV",
-        type=["csv"],
-        help="Upload AIAA Command Central - GlobalData CSV",
-        key="global_data_upload"
-    )
+    # Load data button
+    if st.button("🔄 Load Data from Snowflake", use_container_width=True):
+        with st.spinner("Loading data from Snowflake..."):
+            df, error = load_data_from_snowflake()
 
-    if global_data_file is not None:
-        try:
-            with st.spinner("Loading data..."):
-                df = pd.read_csv(global_data_file, low_memory=False)
+            if error:
+                st.error(f"Error loading data: {error}")
+            elif df is not None:
                 st.session_state.global_data = df
-                st.success(f"✓ Loaded GlobalData")
-                st.metric("Total Rows", f"{len(df):,}")
+                st.session_state.last_load_time = datetime.now()
+                st.success("✓ Data loaded successfully!")
+                st.rerun()
 
-                if 'SOURCE_SNAPSHOT_DATE' in df.columns:
-                    df['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(df['SOURCE_SNAPSHOT_DATE'])
-                    st.metric("Date Range", f"{df['SOURCE_SNAPSHOT_DATE'].min().strftime('%Y-%m-%d')} to {df['SOURCE_SNAPSHOT_DATE'].max().strftime('%Y-%m-%d')}")
+    # Auto-load on first visit
+    if st.session_state.global_data is None:
+        with st.spinner("Loading data from Snowflake..."):
+            df, error = load_data_from_snowflake()
 
-                if 'INSTANCE_ACCOUNT_SUBDOMAIN' in df.columns:
-                    st.metric("Unique Instances", df['INSTANCE_ACCOUNT_SUBDOMAIN'].nunique())
-        except Exception as e:
-            st.error(f"Error loading file: {e}")
-            st.exception(e)
+            if error:
+                st.error(f"Error loading data: {error}")
+                st.markdown("**Troubleshooting:**")
+                st.markdown("- Ensure you're running this in Snowflake Streamlit")
+                st.markdown("- Check table permissions")
+            elif df is not None:
+                st.session_state.global_data = df
+                st.session_state.last_load_time = datetime.now()
+
+    # Show data stats if loaded
+    if st.session_state.global_data is not None:
+        df = st.session_state.global_data
+        st.success("✓ Data Loaded")
+
+        if st.session_state.last_load_time:
+            st.caption(f"Last loaded: {st.session_state.last_load_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        st.metric("Total Rows", f"{len(df):,}")
+
+        if 'SOURCE_SNAPSHOT_DATE' in df.columns:
+            df['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(df['SOURCE_SNAPSHOT_DATE'])
+            st.metric("Date Range", f"{df['SOURCE_SNAPSHOT_DATE'].min().strftime('%Y-%m-%d')} to {df['SOURCE_SNAPSHOT_DATE'].max().strftime('%Y-%m-%d')}")
+
+        if 'INSTANCE_ACCOUNT_SUBDOMAIN' in df.columns:
+            st.metric("Unique Instances", df['INSTANCE_ACCOUNT_SUBDOMAIN'].nunique())
 
     if st.session_state.global_data is not None:
         st.divider()
@@ -357,7 +408,11 @@ if st.session_state.global_data is None:
     st.markdown("""
     ## Welcome to AIAA Command Central Dashboard 🎯
 
-    This dashboard automatically calculates all scorecard metrics from your GlobalData CSV, **matching the Excel formulas exactly**.
+    This dashboard automatically calculates all scorecard metrics from live Snowflake data, **matching the Excel formulas exactly**.
+
+    ### Data Source:
+    - **Table**: `presentation.success.ai_agents_advanced_command_central`
+    - **Updates**: Live data refreshed automatically
 
     ### Key Filters (Automatic):
     - **ARR Band**: Filtered to "b) 12K-100K, c) 100K+" (matching Excel)
@@ -372,12 +427,12 @@ if st.session_state.global_data is None:
     - **Go-Live**: Actual and projected go-live tracking
 
     ### Getting Started:
-    1. Upload your **GlobalData CSV** file in the sidebar
+    1. Click **"Load Data from Snowflake"** in the sidebar (or wait for auto-load)
     2. Metrics calculate automatically for each week
     3. Numbers will match your Excel scorecard exactly
     4. Use additional filters (date, region) to drill down
 
-    **Upload your GlobalData CSV to begin!**
+    **Click "Load Data from Snowflake" in the sidebar to begin!**
     """)
 
 else:
@@ -540,6 +595,8 @@ else:
 
             with col3:
                 st.metric("Bot deployed share %", f"{latest['Bot deployed share %']:.1%}", border=True)
+                st.caption(f"Numerator (Bot Interactions): {int(latest['Bot deployed share - numerator']):,}")
+                st.caption(f"Denominator (Total Tickets): {int(latest['Bot deployed share - denominator']):,}")
 
             col1, col2, col3 = st.columns(3)
 

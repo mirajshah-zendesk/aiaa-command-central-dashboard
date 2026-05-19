@@ -1,9 +1,9 @@
 [project]
-name = "streamlit-dashboard"
-version = "0.1.0"
-description = "Add your description here"
+name = "aiaa-command-central-dashboard"
+version = "0.2.0"
+description = "AIAA Command Central Dashboard - Snowflake native version"
 requires-python = ">=3.13"
 dependencies = [
-    "snowflake-connector-python>=3.3.0",
+    "snowflake-snowpark-python>=1.11.0",
     "streamlit>=1.53.0",
 ]
