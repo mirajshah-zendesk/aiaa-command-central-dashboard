@@ -48,8 +48,11 @@ def load_data_from_snowflake():
 
         df = session.sql(query).to_pandas()
 
-        # Rename '60+_day_tenure' to '60+ Day Tenure?' to match Excel column naming
-        if '60+_day_tenure' in df.columns:
+        # Rename 'TENURE_60_PLUS_DAYS' to '60+ Day Tenure?' to match Excel column naming
+        if 'TENURE_60_PLUS_DAYS' in df.columns:
+            df.rename(columns={'TENURE_60_PLUS_DAYS': '60+ Day Tenure?'}, inplace=True)
+        # Fallback for old column name (backwards compatibility)
+        elif '60+_day_tenure' in df.columns:
             df.rename(columns={'60+_day_tenure': '60+ Day Tenure?'}, inplace=True)
 
         return df, None

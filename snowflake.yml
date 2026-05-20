@@ -5,7 +5,3 @@ entities:
     title: "AIAA Command Central Dashboard"
     query_warehouse: PUBLIC_ZENDESK_XS
     main_file: streamlit_app.py
-    pages_dir: null
-    stage: streamlit
-    database: PRESENTATION
-    schema: SUCCESS
