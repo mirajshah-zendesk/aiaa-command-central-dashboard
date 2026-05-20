@@ -416,7 +416,7 @@ with st.sidebar:
         if 'INSTANCE_ACCOUNT_SUBDOMAIN' in df.columns:
             st.metric("Unique Instances", df['INSTANCE_ACCOUNT_SUBDOMAIN'].nunique())
 
-    if st.session_state.global_data is not None:
+    if st.session_state.global_data is not None and len(st.session_state.global_data) > 0:
         st.divider()
         st.header("Filters")
 
@@ -426,35 +426,42 @@ with st.sidebar:
         gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
 
         # Date filter
-        if 'SOURCE_SNAPSHOT_DATE' in gdf.columns:
-            min_date = gdf['SOURCE_SNAPSHOT_DATE'].min().date()
-            max_date = gdf['SOURCE_SNAPSHOT_DATE'].max().date()
+        if 'SOURCE_SNAPSHOT_DATE' in gdf.columns and not gdf['SOURCE_SNAPSHOT_DATE'].isna().all():
+            try:
+                min_date = gdf['SOURCE_SNAPSHOT_DATE'].min().date()
+                max_date = gdf['SOURCE_SNAPSHOT_DATE'].max().date()
 
-            date_range = st.date_input(
-                "Date Range",
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date
-            )
+                date_range = st.date_input(
+                    "Date Range",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date
+                )
+            except Exception as e:
+                st.error(f"Error with date filter: {e}")
+                date_range = None
 
         # Region filter
         if 'CRM_REGION' in gdf.columns:
-            regions = ['All'] + sorted(gdf['CRM_REGION'].dropna().unique().tolist())
-            selected_region = st.selectbox("Region", regions)
+            region_values = gdf['CRM_REGION'].dropna().unique()
+            regions = ['All'] + sorted([str(r) for r in region_values if r is not None])
+            selected_region = st.selectbox("Region", regions, key="region_filter")
         else:
             selected_region = 'All'
 
         # ARR Band filter
         if 'CRM_ARR_BAND_BROAD' in gdf.columns:
-            arr_bands = ['All'] + sorted(gdf['CRM_ARR_BAND_BROAD'].dropna().unique().tolist())
-            selected_arr_band = st.selectbox("ARR Band", arr_bands)
+            arr_values = gdf['CRM_ARR_BAND_BROAD'].dropna().unique()
+            arr_bands = ['All'] + sorted([str(a) for a in arr_values if a is not None])
+            selected_arr_band = st.selectbox("ARR Band", arr_bands, key="arr_filter")
         else:
             selected_arr_band = 'All'
 
         # Responsibility filter
         if 'RESPONSIBILITY' in gdf.columns:
-            responsibilities = ['All'] + sorted(gdf['RESPONSIBILITY'].dropna().unique().tolist())
-            selected_responsibility = st.selectbox("Responsibility", responsibilities)
+            resp_values = gdf['RESPONSIBILITY'].dropna().unique()
+            responsibilities = ['All'] + sorted([str(r) for r in resp_values if r is not None])
+            selected_responsibility = st.selectbox("Responsibility", responsibilities, key="resp_filter")
         else:
             selected_responsibility = 'All'
 
@@ -465,7 +472,8 @@ with st.sidebar:
             options=['AI Agents Advanced', 'AI Agents Essentials'],
             default=['AI Agents Advanced', 'AI Agents Essentials'],
             label_visibility="collapsed",
-            help="Advanced = INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED = TRUE; Essentials = Advanced is FALSE but INSTANCE_IS_AI_AGENTS_PAID_PENETRATED = TRUE"
+            help="Advanced = INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED = TRUE; Essentials = Advanced is FALSE but INSTANCE_IS_AI_AGENTS_PAID_PENETRATED = TRUE",
+            key="product_filter"
         )
 
 # Main content
