@@ -114,11 +114,19 @@ def calculate_scorecard_metrics(df):
 
         # Impact Metrics - Customer counts (CRM level)
         # "# customers" = # penetrated customers (CRM grain)
-        penetrated_filter = snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True
-        metrics['# customers'] = snapshot[penetrated_filter]['CRM_ACCOUNT_ID'].nunique()
+        # Note: Uses either ADVANCED or PAID penetrated flags based on filtered data
+        crm_penetrated_filter = (
+            (snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) |
+            (snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+        )
+        metrics['# customers'] = snapshot[crm_penetrated_filter]['CRM_ACCOUNT_ID'].nunique()
 
         # "# instances" = # penetrated instances (Instance grain)
-        metrics['# instances'] = snapshot[snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True]['INSTANCE_ACCOUNT_ID'].nunique()
+        instance_penetrated_filter = (
+            (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) |
+            (snapshot['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+        )
+        metrics['# instances'] = snapshot[instance_penetrated_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # Eligible (60+ day tenure) - Use '60+ Day Tenure?' column
         # This filter is used for both adopted AND eligible metrics
@@ -126,23 +134,26 @@ def calculate_scorecard_metrics(df):
 
         # Adopted customers (CRM grain) - MUST have 60+ day tenure
         # Formula: COUNTUNIQUEIFS with ADOPTED=TRUE, PENETRATED=TRUE, 60+ Day Tenure=TRUE
-        adopted_filter = (snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) & \
-                        (snapshot['CRM_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True) & \
-                        eligible_tenure_filter
-        metrics['Adopted customers'] = snapshot[adopted_filter]['CRM_ACCOUNT_ID'].nunique()
+        # Note: Uses either ADVANCED or PAID adopted flags based on filtered data
+        crm_adopted_filter = (
+            ((snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) & (snapshot['CRM_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True)) |
+            ((snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True) & (snapshot['CRM_IS_AI_AGENTS_PAID_ADOPTED'] == True))
+        ) & eligible_tenure_filter
+        metrics['Adopted customers'] = snapshot[crm_adopted_filter]['CRM_ACCOUNT_ID'].nunique()
 
         # Adopted instances (Instance grain) - MUST have 60+ day tenure
-        adopted_inst_filter = (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) & \
-                              (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True) & \
-                              eligible_tenure_filter
-        metrics['Adopted instances'] = snapshot[adopted_inst_filter]['INSTANCE_ACCOUNT_ID'].nunique()
+        instance_adopted_filter = (
+            ((snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) & (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True)) |
+            ((snapshot['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True) & (snapshot['INSTANCE_IS_AI_AGENTS_PAID_ADOPTED'] == True))
+        ) & eligible_tenure_filter
+        metrics['Adopted instances'] = snapshot[instance_adopted_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # $100k+ ARR adopted customers
-        adopted_100k_filter = adopted_filter & (snapshot['CRM_ARR_BAND_BROAD'] == 'c) 100K+')
+        adopted_100k_filter = crm_adopted_filter & (snapshot['CRM_ARR_BAND_BROAD'] == 'c) 100K+')
         metrics['Adopted customers ($100k+)'] = snapshot[adopted_100k_filter]['CRM_ACCOUNT_ID'].nunique()
 
         # Eligible customers (CRM grain, 60+ day tenure)
-        eligible_cust_filter = penetrated_filter & eligible_tenure_filter
+        eligible_cust_filter = crm_penetrated_filter & eligible_tenure_filter
         metrics['Eligible customers'] = snapshot[eligible_cust_filter]['CRM_ACCOUNT_ID'].nunique()
 
         # Eligible customers ($100k+)
@@ -150,7 +161,7 @@ def calculate_scorecard_metrics(df):
         metrics['Eligible customers ($100k+)'] = snapshot[eligible_100k_filter]['CRM_ACCOUNT_ID'].nunique()
 
         # Eligible instances (Instance grain, 60+ day tenure)
-        eligible_inst_filter = (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) & eligible_tenure_filter
+        eligible_inst_filter = instance_penetrated_filter & eligible_tenure_filter
         metrics['Eligible instances'] = snapshot[eligible_inst_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # Adoption rates
@@ -180,7 +191,7 @@ def calculate_scorecard_metrics(df):
         # Formula: SUM(AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED) / SUM(PRORATED_ALLOWANCE_LAST_28D)
         # Where: PENETRATED=TRUE, ARR>0, ALLOWANCE_PERIOD>=12, DAYS_INTO_CYCLE>28, TOTAL_ALLOWANCE<1M
         ar_util_filter = (
-            (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+            instance_penetrated_filter &
             (snapshot['AUTOMATED_RESOLUTIONS_NET_ARR_USD'] > 0) &
             (snapshot['ALLOWANCE_PERIOD_MONTHS'] >= 12) &
             (snapshot['DAYS_INTO_ALLOWANCE_CYCLE'] > 28) &
@@ -212,7 +223,7 @@ def calculate_scorecard_metrics(df):
         # AR Rate buckets - Count unique instances (not rows)
         # Formula: COUNTUNIQUEIFS with PENETRATED=TRUE, AR>0, AR<0.3
         ar_0_30_filter = (
-            (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+            instance_penetrated_filter &
             (snapshot['OVERALL_AR_RATE'] > 0) &
             (snapshot['OVERALL_AR_RATE'] < 0.3)
         )
@@ -220,7 +231,7 @@ def calculate_scorecard_metrics(df):
 
         # Formula: COUNTUNIQUEIFS with PENETRATED=TRUE, AR>=0.3
         ar_30_plus_filter = (
-            (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+            instance_penetrated_filter &
             (snapshot['OVERALL_AR_RATE'] >= 0.3)
         )
         metrics['Instances AR 30%+'] = snapshot[ar_30_plus_filter]['INSTANCE_ACCOUNT_ID'].nunique()
@@ -229,7 +240,7 @@ def calculate_scorecard_metrics(df):
         # Formula: COUNTIFS with PENETRATED=TRUE, FIRST_BOT_DEPLOYED_DATE<>""
         if 'FIRST_BOT_DEPLOYED_DATE' in snapshot.columns:
             bot_deployed_filter = (
-                (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+                instance_penetrated_filter &
                 (snapshot['FIRST_BOT_DEPLOYED_DATE'].notna()) &
                 (snapshot['FIRST_BOT_DEPLOYED_DATE'] != '')
             )
@@ -267,7 +278,7 @@ def calculate_scorecard_metrics(df):
 
         # Integrations - Formula: COUNTUNIQUEIFS with PENETRATED=TRUE, 60+ Day Tenure=TRUE, ACTIVE_INTEGRATIONS_28D > 0
         integration_filter = (
-            (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+            instance_penetrated_filter &
             eligible_tenure_filter &
             (snapshot['ACTIVE_INTEGRATIONS_28D'] > 0)
         )
@@ -287,7 +298,7 @@ def calculate_scorecard_metrics(df):
         if 'ACTUAL_GO_LIVE_DATE' in snapshot.columns:
             snapshot['ACTUAL_GO_LIVE_DATE'] = pd.to_datetime(snapshot['ACTUAL_GO_LIVE_DATE'], errors='coerce')
             actual_golive_filter = (
-                (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+                instance_penetrated_filter &
                 (snapshot['ACTUAL_GO_LIVE_DATE'] > one_week_ago) &
                 (snapshot['ACTUAL_GO_LIVE_DATE'] <= date)
             )
@@ -298,7 +309,7 @@ def calculate_scorecard_metrics(df):
         if 'PROJECTED_GO_LIVE_DATE' in snapshot.columns:
             snapshot['PROJECTED_GO_LIVE_DATE'] = pd.to_datetime(snapshot['PROJECTED_GO_LIVE_DATE'], errors='coerce')
             projected_golive_filter = (
-                (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+                instance_penetrated_filter &
                 (snapshot['PROJECTED_GO_LIVE_DATE'] > one_week_ago) &
                 (snapshot['PROJECTED_GO_LIVE_DATE'] <= date)
             )
@@ -310,7 +321,7 @@ def calculate_scorecard_metrics(df):
         if 'FIRST_BOT_DEPLOYED_DATE' in snapshot.columns:
             snapshot['FIRST_BOT_DEPLOYED_DATE'] = pd.to_datetime(snapshot['FIRST_BOT_DEPLOYED_DATE'], errors='coerce')
             bots_deployed_filter = (
-                (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) &
+                instance_penetrated_filter &
                 (snapshot['FIRST_BOT_DEPLOYED_DATE'] > one_week_ago) &
                 (snapshot['FIRST_BOT_DEPLOYED_DATE'] <= date)
             )
@@ -341,8 +352,11 @@ def calculate_cohort_metrics(df):
     for date in dates:
         snapshot = df[df['SOURCE_SNAPSHOT_DATE'] == date].copy()
 
-        # Filter for penetrated customers only
-        penetrated_filter = snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True
+        # Filter for penetrated customers only (Advanced OR Paid)
+        penetrated_filter = (
+            (snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True) |
+            (snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+        )
         snapshot_penetrated = snapshot[penetrated_filter]
 
         # Check if COHORT column exists
