@@ -463,6 +463,30 @@ with st.sidebar:
         else:
             selected_responsibility = 'All'
 
+        # Segment filter
+        if 'CRM_MARKET_SEGMENT' in gdf.columns:
+            segment_values = gdf['CRM_MARKET_SEGMENT'].dropna().unique()
+            segments = ['All'] + sorted([str(s) for s in segment_values if s is not None])
+            selected_segment = st.selectbox("Segment", segments, key="segment_filter")
+        else:
+            selected_segment = 'All'
+
+        # Sub-Region filter
+        if 'CRM_SUB_REGION' in gdf.columns:
+            subregion_values = gdf['CRM_SUB_REGION'].dropna().unique()
+            subregions = ['All'] + sorted([str(s) for s in subregion_values if s is not None])
+            selected_subregion = st.selectbox("Sub-Region", subregions, key="subregion_filter")
+        else:
+            selected_subregion = 'All'
+
+        # Industry filter
+        if 'CRM_INDUSTRY' in gdf.columns:
+            industry_values = gdf['CRM_INDUSTRY'].dropna().unique()
+            industries = ['All'] + sorted([str(i) for i in industry_values if i is not None])
+            selected_industry = st.selectbox("Industry", industries, key="industry_filter")
+        else:
+            selected_industry = 'All'
+
         # AI Agents Product filter (multi-select)
         st.markdown("**AI Agents Product**")
         ai_product_options = st.multiselect(
@@ -538,6 +562,15 @@ else:
 
     if 'selected_responsibility' in locals() and selected_responsibility != 'All':
         gdf = gdf[gdf['RESPONSIBILITY'] == selected_responsibility]
+
+    if 'selected_segment' in locals() and selected_segment != 'All':
+        gdf = gdf[gdf['CRM_MARKET_SEGMENT'] == selected_segment]
+
+    if 'selected_subregion' in locals() and selected_subregion != 'All':
+        gdf = gdf[gdf['CRM_SUB_REGION'] == selected_subregion]
+
+    if 'selected_industry' in locals() and selected_industry != 'All':
+        gdf = gdf[gdf['CRM_INDUSTRY'] == selected_industry]
 
     # AI Agents Product filter (multi-select with hierarchy)
     if 'ai_product_options' in locals() and len(ai_product_options) > 0:
