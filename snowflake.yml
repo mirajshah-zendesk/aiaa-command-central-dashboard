@@ -1,7 +1,9 @@
-definition_version: "2"
-entities:
-  aiaa_command_central_dashboard:
-    type: streamlit
-    title: "AIAA Command Central Dashboard"
-    query_warehouse: PUBLIC_ZENDESK_XS
-    main_file: streamlit_app.py
+definition_version: 1.1
+streamlit:
+  name: AIAA_COMMAND_CENTRAL_DASHBOARD
+  stage: streamlit
+  database: STREAMLIT_APPS
+  schema: AIAA_COMMAND_CENTRAL
+  title: "AIAA Command Central Dashboard"
+  query_warehouse: PUBLIC_ZENDESK_XS
+  main_file: streamlit_app.py
