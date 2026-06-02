@@ -1024,7 +1024,7 @@ else:
 
                     # Reorder columns
                     column_order = [
-                        'CRM_ACCOUNT_NAME', 'CRM_ACCOUNT_ID', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
                         'Current AR Rate', 'Previous AR Rate',
                         'Current ARs (28d)', 'Previous ARs (28d)'
                     ]
@@ -1094,7 +1094,7 @@ else:
 
                     # Reorder columns
                     column_order = [
-                        'CRM_ACCOUNT_NAME', 'CRM_ACCOUNT_ID', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
                         'Current AR Rate', 'Previous AR Rate',
                         'Current ARs (28d)', 'Previous ARs (28d)'
                     ]
