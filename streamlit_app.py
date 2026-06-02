@@ -1172,6 +1172,13 @@ else:
                         selected_id = customer_map[selected_customer]
                         existing_note = notes_dict.get(selected_id, "")
 
+                        # Show debug info
+                        with st.expander("🔍 Debug: Customer Info", expanded=False):
+                            st.write(f"**Selected Customer:** {selected_customer}")
+                            st.write(f"**CRM Account ID:** {selected_id}")
+                            st.write(f"**Snapshot Date:** {latest_date}")
+                            st.write(f"**Existing Note:** {existing_note if existing_note else '(none)'}")
+
                         note_text = st.text_area(
                             "Notes",
                             value=existing_note,
@@ -1181,11 +1188,14 @@ else:
                         )
 
                         if st.button("💾 Save Note", key=f"save_note_{selected_id}"):
-                            if save_note(selected_id, selected_customer, latest_date, note_text, current_user):
-                                st.success(f"✓ Note saved for {selected_customer}")
+                            with st.spinner("Saving note..."):
+                                success = save_note(selected_id, selected_customer, latest_date, note_text, current_user)
+                            if success:
+                                st.success(f"✓ Note saved for {selected_customer} (ID: {selected_id})")
+                                st.info("Refreshing page to load updated notes...")
                                 st.rerun()
                             else:
-                                st.error("Failed to save note")
+                                st.error("Failed to save note - check error message above")
 
                     # Download button (with unformatted data for Excel, excluding CRM_ACCOUNT_ID)
                     st.divider()
