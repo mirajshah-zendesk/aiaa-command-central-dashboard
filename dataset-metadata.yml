@@ -1,0 +1,53 @@
+version: 1
+dataset:
+  name: ADOPTION_LOSS_NOTES
+  type: table
+  schema: AIAA_COMMAND_CENTRAL
+  database: STREAMLIT_APPS
+  description: Stores user notes explaining why customers lost adoption status in AIAA Command Central dashboard
+  dataset_collection: CX_REPORTS_AND_DASHBOARD
+  curating_team: ED&A CX Analytics
+  columns:
+    - name: CRM_ACCOUNT_ID
+      description: Unique identifier for the CRM account
+      data_sensitivity: non_sensitive
+      pii_type: none
+      source_lineage:
+        - database: PRESENTATION
+          schema: SUCCESS
+          table: AI_AGENTS_ADVANCED_COMMAND_CENTRAL
+          column: CRM_ACCOUNT_ID
+    - name: CRM_ACCOUNT_NAME
+      description: Name of the CRM account
+      data_sensitivity: non_sensitive
+      pii_type: none
+      source_lineage:
+        - database: PRESENTATION
+          schema: SUCCESS
+          table: AI_AGENTS_ADVANCED_COMMAND_CENTRAL
+          column: CRM_ACCOUNT_NAME
+    - name: SNAPSHOT_DATE
+      description: Date of the snapshot when adoption loss was identified
+      data_sensitivity: non_sensitive
+      pii_type: none
+      source_lineage:
+        - database: PRESENTATION
+          schema: SUCCESS
+          table: AI_AGENTS_ADVANCED_COMMAND_CENTRAL
+          column: SOURCE_SNAPSHOT_DATE
+    - name: NOTES
+      description: User-entered notes explaining why the customer lost adoption
+      data_sensitivity: non_sensitive
+      pii_type: none
+    - name: CREATED_BY
+      description: Snowflake user who created the note
+      data_sensitivity: non_sensitive
+      pii_type: none
+    - name: CREATED_AT
+      description: Timestamp when the note was first created
+      data_sensitivity: non_sensitive
+      pii_type: none
+    - name: UPDATED_AT
+      description: Timestamp when the note was last updated
+      data_sensitivity: non_sensitive
+      pii_type: none
