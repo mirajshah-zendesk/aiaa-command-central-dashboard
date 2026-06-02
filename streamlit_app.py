@@ -1114,14 +1114,14 @@ else:
                         'CRM_REGION': 'first',
                         'CRM_ARR_BAND_BROAD': 'first',
                         'CRM_MARKET_SEGMENT': 'first',
-                        'OVERALL_AR_RATE': 'mean',  # Average AR rate across instances
-                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'  # Sum ARs across instances
+                        'AR_RATE_PAID': 'mean',  # Average AR rate across instances
+                        'AUTOMATED_RESOLUTIONS_PAID': 'sum'  # Sum ARs across instances
                     }).reset_index()
 
                     # Previous snapshot
                     lost_prev_agg = lost_customers_prev.groupby('CRM_ACCOUNT_ID').agg({
-                        'OVERALL_AR_RATE': 'mean',
-                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'
+                        'AR_RATE_PAID': 'mean',
+                        'AUTOMATED_RESOLUTIONS_PAID': 'sum'
                     }).reset_index()
 
                     # Merge current and previous data
@@ -1134,10 +1134,10 @@ else:
 
                     # Rename columns for clarity
                     lost_df = lost_df.rename(columns={
-                        'OVERALL_AR_RATE_Current': 'Current AR Rate',
-                        'OVERALL_AR_RATE_Previous': 'Previous AR Rate',
-                        'TOTAL_AUTOMATED_RESOLUTIONS_Current': 'Current ARs (28d)',
-                        'TOTAL_AUTOMATED_RESOLUTIONS_Previous': 'Previous ARs (28d)'
+                        'AR_RATE_PAID_Current': 'Current AR Rate',
+                        'AR_RATE_PAID_Previous': 'Previous AR Rate',
+                        'AUTOMATED_RESOLUTIONS_PAID_Current': 'Current ARs (28d)',
+                        'AUTOMATED_RESOLUTIONS_PAID_Previous': 'Previous ARs (28d)'
                     })
 
                     # Initialize notes table
@@ -1263,14 +1263,14 @@ else:
                         'CRM_REGION': 'first',
                         'CRM_ARR_BAND_BROAD': 'first',
                         'CRM_MARKET_SEGMENT': 'first',
-                        'OVERALL_AR_RATE': 'mean',  # Average AR rate across instances
-                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'  # Sum ARs across instances
+                        'AR_RATE_PAID': 'mean',  # Average AR rate across instances
+                        'AUTOMATED_RESOLUTIONS_PAID': 'sum'  # Sum ARs across instances
                     }).reset_index()
 
                     # Previous snapshot (may not exist if customer was just added)
                     gained_prev_agg = gained_customers_prev.groupby('CRM_ACCOUNT_ID').agg({
-                        'OVERALL_AR_RATE': 'mean',
-                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'
+                        'AR_RATE_PAID': 'mean',
+                        'AUTOMATED_RESOLUTIONS_PAID': 'sum'
                     }).reset_index()
 
                     # Merge current and previous data
@@ -1283,10 +1283,10 @@ else:
 
                     # Rename columns for clarity
                     gained_df = gained_df.rename(columns={
-                        'OVERALL_AR_RATE_Current': 'Current AR Rate',
-                        'OVERALL_AR_RATE_Previous': 'Previous AR Rate',
-                        'TOTAL_AUTOMATED_RESOLUTIONS_Current': 'Current ARs (28d)',
-                        'TOTAL_AUTOMATED_RESOLUTIONS_Previous': 'Previous ARs (28d)'
+                        'AR_RATE_PAID_Current': 'Current AR Rate',
+                        'AR_RATE_PAID_Previous': 'Previous AR Rate',
+                        'AUTOMATED_RESOLUTIONS_PAID_Current': 'Current ARs (28d)',
+                        'AUTOMATED_RESOLUTIONS_PAID_Previous': 'Previous ARs (28d)'
                     })
 
                     # Reorder columns
