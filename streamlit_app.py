@@ -603,10 +603,11 @@ else:
             st.stop()
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
+        ":material/warning: Adoption Loss",
         ":material/table: Data Explorer",
         ":material/info: Metrics Guide"
     ])
@@ -918,6 +919,135 @@ else:
             )
 
     with tab4:
+        st.subheader("Adoption Loss Analysis")
+
+        if len(gdf) == 0:
+            st.warning("No data available for the selected filters.")
+        else:
+            # Get the two most recent snapshots
+            gdf_sorted = gdf.copy()
+            gdf_sorted['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf_sorted['SOURCE_SNAPSHOT_DATE'])
+            gdf_sorted = gdf_sorted.sort_values('SOURCE_SNAPSHOT_DATE')
+
+            available_dates = gdf_sorted['SOURCE_SNAPSHOT_DATE'].unique()
+
+            if len(available_dates) < 2:
+                st.warning("Need at least 2 snapshots to compare adoption changes. Currently only have 1 snapshot.")
+            else:
+                latest_date = available_dates[-1]
+                previous_date = available_dates[-2]
+
+                st.markdown(f"**Comparing:** {previous_date.strftime('%Y-%m-%d')} → {latest_date.strftime('%Y-%m-%d')}")
+
+                # Get snapshots
+                latest_snapshot = gdf_sorted[gdf_sorted['SOURCE_SNAPSHOT_DATE'] == latest_date].copy()
+                previous_snapshot = gdf_sorted[gdf_sorted['SOURCE_SNAPSHOT_DATE'] == previous_date].copy()
+
+                # Define adopted filter (matching the main scorecard logic)
+                eligible_tenure_filter_prev = previous_snapshot['60+ Day Tenure?'] == True
+                eligible_tenure_filter_latest = latest_snapshot['60+ Day Tenure?'] == True
+
+                # Previous adopted customers
+                crm_adopted_filter_prev = (
+                    ((previous_snapshot['CRM_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True) & (previous_snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)) |
+                    ((previous_snapshot['CRM_IS_AI_AGENTS_PAID_ADOPTED'] == True) & (previous_snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True) & (previous_snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False))
+                ) & eligible_tenure_filter_prev
+
+                # Latest adopted customers
+                crm_adopted_filter_latest = (
+                    ((latest_snapshot['CRM_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True) & (latest_snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)) |
+                    ((latest_snapshot['CRM_IS_AI_AGENTS_PAID_ADOPTED'] == True) & (latest_snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True) & (latest_snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False))
+                ) & eligible_tenure_filter_latest
+
+                # Get sets of adopted CRM account IDs
+                prev_adopted_ids = set(previous_snapshot[crm_adopted_filter_prev]['CRM_ACCOUNT_ID'].unique())
+                latest_adopted_ids = set(latest_snapshot[crm_adopted_filter_latest]['CRM_ACCOUNT_ID'].unique())
+
+                # Find customers who lost adoption
+                lost_adoption_ids = prev_adopted_ids - latest_adopted_ids
+
+                # Find customers who gained adoption
+                gained_adoption_ids = latest_adopted_ids - prev_adopted_ids
+
+                # Display metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Lost Adoption", len(lost_adoption_ids), delta=f"-{len(lost_adoption_ids)}", delta_color="inverse")
+                with col2:
+                    st.metric("Gained Adoption", len(gained_adoption_ids), delta=f"+{len(gained_adoption_ids)}")
+                with col3:
+                    net_change = len(gained_adoption_ids) - len(lost_adoption_ids)
+                    st.metric("Net Change", net_change, delta=f"{net_change:+d}")
+
+                st.divider()
+
+                # Show customers who lost adoption
+                if len(lost_adoption_ids) > 0:
+                    st.markdown("### 🔻 Customers Who Lost Adoption")
+
+                    # Get details from latest snapshot for these customers
+                    lost_customers = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(lost_adoption_ids)].copy()
+
+                    # Deduplicate by CRM account (take first instance per CRM account)
+                    lost_customers_unique = lost_customers.drop_duplicates(subset=['CRM_ACCOUNT_ID'])
+
+                    # Select relevant columns
+                    display_cols = ['CRM_ACCOUNT_NAME', 'CRM_ACCOUNT_ID', 'CRM_REGION', 'CRM_ARR_BAND_BROAD',
+                                   'CRM_MARKET_SEGMENT', 'OVERALL_AR_RATE', '60+ Day Tenure?', 'TENURE_MONTHS']
+
+                    # Filter to available columns
+                    available_display_cols = [col for col in display_cols if col in lost_customers_unique.columns]
+
+                    lost_df = lost_customers_unique[available_display_cols].sort_values('CRM_ACCOUNT_NAME')
+
+                    # Format AR rate as percentage
+                    if 'OVERALL_AR_RATE' in lost_df.columns:
+                        lost_df['OVERALL_AR_RATE'] = lost_df['OVERALL_AR_RATE'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+
+                    st.dataframe(lost_df, use_container_width=True, height=400)
+
+                    # Download button
+                    st.download_button(
+                        label=":material/download: Download Lost Adoption List (CSV)",
+                        data=lost_df.to_csv(index=False).encode('utf-8'),
+                        file_name=f"lost_adoption_{previous_date.strftime('%Y%m%d')}_to_{latest_date.strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.success("✅ No customers lost adoption between these snapshots!")
+
+                st.divider()
+
+                # Show customers who gained adoption
+                if len(gained_adoption_ids) > 0:
+                    st.markdown("### 🔺 Customers Who Gained Adoption")
+
+                    # Get details from latest snapshot for these customers
+                    gained_customers = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(gained_adoption_ids)].copy()
+
+                    # Deduplicate by CRM account
+                    gained_customers_unique = gained_customers.drop_duplicates(subset=['CRM_ACCOUNT_ID'])
+
+                    # Select relevant columns
+                    available_display_cols = [col for col in display_cols if col in gained_customers_unique.columns]
+
+                    gained_df = gained_customers_unique[available_display_cols].sort_values('CRM_ACCOUNT_NAME')
+
+                    # Format AR rate as percentage
+                    if 'OVERALL_AR_RATE' in gained_df.columns:
+                        gained_df['OVERALL_AR_RATE'] = gained_df['OVERALL_AR_RATE'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+
+                    st.dataframe(gained_df, use_container_width=True, height=400)
+
+                    # Download button
+                    st.download_button(
+                        label=":material/download: Download Gained Adoption List (CSV)",
+                        data=gained_df.to_csv(index=False).encode('utf-8'),
+                        file_name=f"gained_adoption_{previous_date.strftime('%Y%m%d')}_to_{latest_date.strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+
+    with tab5:
         st.subheader("Data Explorer")
 
         all_columns = gdf.columns.tolist()
@@ -929,7 +1059,7 @@ else:
         if selected_columns:
             st.dataframe(gdf[selected_columns].head(1000), use_container_width=True, height=500)
 
-    with tab5:
+    with tab6:
         st.subheader("Metrics Guide")
         st.markdown("""
         ### Key Formula Details
