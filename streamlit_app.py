@@ -61,15 +61,25 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
     try:
         session = get_active_session()
 
+        # Format date consistently
+        if isinstance(snapshot_date, pd.Timestamp):
+            snapshot_date_str = snapshot_date.strftime('%Y-%m-%d')
+        else:
+            snapshot_date_str = str(snapshot_date)
+
+        # Escape single quotes in strings
+        crm_account_name_escaped = crm_account_name.replace("'", "''")
+        notes_escaped = notes.replace("'", "''")
+
         # Use MERGE to insert or update
         merge_sql = f"""
         MERGE INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES AS target
         USING (
             SELECT
                 '{crm_account_id}' AS CRM_ACCOUNT_ID,
-                '{crm_account_name.replace("'", "''")}' AS CRM_ACCOUNT_NAME,
-                '{snapshot_date}'::DATE AS SNAPSHOT_DATE,
-                '{notes.replace("'", "''")}' AS NOTES,
+                '{crm_account_name_escaped}' AS CRM_ACCOUNT_NAME,
+                '{snapshot_date_str}'::DATE AS SNAPSHOT_DATE,
+                '{notes_escaped}' AS NOTES,
                 '{user_email}' AS CREATED_BY,
                 CURRENT_TIMESTAMP() AS UPDATED_AT
         ) AS source
@@ -95,15 +105,22 @@ def load_notes(snapshot_date):
     try:
         session = get_active_session()
 
+        # Format date consistently
+        if isinstance(snapshot_date, pd.Timestamp):
+            snapshot_date_str = snapshot_date.strftime('%Y-%m-%d')
+        else:
+            snapshot_date_str = str(snapshot_date)
+
         query = f"""
         SELECT CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, NOTES, CREATED_BY, UPDATED_AT
         FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
-        WHERE SNAPSHOT_DATE = '{snapshot_date}'::DATE
+        WHERE SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
         """
         df = session.sql(query).to_pandas()
         return df
     except Exception as e:
-        # Table might not exist yet
+        # Table might not exist yet or other error
+        st.warning(f"Could not load notes: {e}")
         return pd.DataFrame(columns=['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'NOTES', 'CREATED_BY', 'UPDATED_AT'])
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -1101,6 +1118,15 @@ else:
                     # Load existing notes for this snapshot
                     existing_notes = load_notes(latest_date)
                     notes_dict = dict(zip(existing_notes['CRM_ACCOUNT_ID'], existing_notes['NOTES'])) if len(existing_notes) > 0 else {}
+
+                    # Debug: Show loaded notes
+                    with st.expander("🔍 Debug: Loaded Notes", expanded=False):
+                        st.write(f"**Snapshot Date:** {latest_date}")
+                        st.write(f"**Number of notes loaded:** {len(existing_notes)}")
+                        if len(existing_notes) > 0:
+                            st.dataframe(existing_notes, use_container_width=True)
+                        else:
+                            st.info("No notes found for this snapshot date.")
 
                     # Merge notes into the dataframe
                     lost_df['Notes'] = lost_df['CRM_ACCOUNT_ID'].map(notes_dict).fillna('')
