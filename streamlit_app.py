@@ -623,19 +623,6 @@ else:
 
             st.markdown(f"**Latest Snapshot:** {latest_date} | **Total Snapshots:** {len(scorecard_df)}")
 
-            # Debug: Show available dates and AR Util values
-            with st.expander("🔍 Debug: Date Matching Info", expanded=False):
-                debug_df = scorecard_df[['Date', 'AR Utilization Run Rate']].copy()
-                debug_df['Date'] = pd.to_datetime(debug_df['Date'])
-                debug_df = debug_df.sort_values('Date', ascending=False).head(10)
-                debug_df['AR Util %'] = (debug_df['AR Utilization Run Rate'] * 100).round(2)
-                st.dataframe(debug_df[['Date', 'AR Util %']], use_container_width=True)
-
-                current_date = pd.to_datetime(latest['Date'])
-                st.write(f"**Current Date:** {current_date.date()}")
-                st.write(f"**1 Week Ago Target:** {(current_date - pd.Timedelta(days=7)).date()}")
-                st.write(f"**4 Weeks Ago Target:** {(current_date - pd.Timedelta(days=28)).date()}")
-
             # Helper function to calculate changes using exact date matching
             def calculate_changes(metric_name, format_type='number'):
                 current = latest[metric_name]
