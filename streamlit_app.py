@@ -985,28 +985,61 @@ else:
                 if len(lost_adoption_ids) > 0:
                     st.markdown("### 🔻 Customers Who Lost Adoption")
 
-                    # Get details from latest snapshot for these customers
-                    lost_customers = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(lost_adoption_ids)].copy()
+                    # Get details from both snapshots for these customers
+                    lost_customers_latest = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(lost_adoption_ids)].copy()
+                    lost_customers_prev = previous_snapshot[previous_snapshot['CRM_ACCOUNT_ID'].isin(lost_adoption_ids)].copy()
 
-                    # Deduplicate by CRM account (take first instance per CRM account)
-                    lost_customers_unique = lost_customers.drop_duplicates(subset=['CRM_ACCOUNT_ID'])
+                    # Aggregate metrics by CRM account for both snapshots
+                    # Latest snapshot
+                    lost_latest_agg = lost_customers_latest.groupby('CRM_ACCOUNT_ID').agg({
+                        'CRM_ACCOUNT_NAME': 'first',
+                        'CRM_REGION': 'first',
+                        'CRM_ARR_BAND_BROAD': 'first',
+                        'CRM_MARKET_SEGMENT': 'first',
+                        'OVERALL_AR_RATE': 'mean',  # Average AR rate across instances
+                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'  # Sum ARs across instances
+                    }).reset_index()
 
-                    # Select relevant columns
-                    display_cols = ['CRM_ACCOUNT_NAME', 'CRM_ACCOUNT_ID', 'CRM_REGION', 'CRM_ARR_BAND_BROAD',
-                                   'CRM_MARKET_SEGMENT', 'OVERALL_AR_RATE', '60+ Day Tenure?', 'TENURE_MONTHS']
+                    # Previous snapshot
+                    lost_prev_agg = lost_customers_prev.groupby('CRM_ACCOUNT_ID').agg({
+                        'OVERALL_AR_RATE': 'mean',
+                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'
+                    }).reset_index()
 
-                    # Filter to available columns
-                    available_display_cols = [col for col in display_cols if col in lost_customers_unique.columns]
+                    # Merge current and previous data
+                    lost_df = lost_latest_agg.merge(
+                        lost_prev_agg,
+                        on='CRM_ACCOUNT_ID',
+                        how='left',
+                        suffixes=('_Current', '_Previous')
+                    )
 
-                    lost_df = lost_customers_unique[available_display_cols].sort_values('CRM_ACCOUNT_NAME')
+                    # Rename columns for clarity
+                    lost_df = lost_df.rename(columns={
+                        'OVERALL_AR_RATE_Current': 'Current AR Rate',
+                        'OVERALL_AR_RATE_Previous': 'Previous AR Rate',
+                        'TOTAL_AUTOMATED_RESOLUTIONS_Current': 'Current ARs (28d)',
+                        'TOTAL_AUTOMATED_RESOLUTIONS_Previous': 'Previous ARs (28d)'
+                    })
 
-                    # Format AR rate as percentage
-                    if 'OVERALL_AR_RATE' in lost_df.columns:
-                        lost_df['OVERALL_AR_RATE'] = lost_df['OVERALL_AR_RATE'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    # Reorder columns
+                    column_order = [
+                        'CRM_ACCOUNT_NAME', 'CRM_ACCOUNT_ID', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'Current AR Rate', 'Previous AR Rate',
+                        'Current ARs (28d)', 'Previous ARs (28d)'
+                    ]
+                    lost_df = lost_df[column_order].sort_values('CRM_ACCOUNT_NAME')
 
-                    st.dataframe(lost_df, use_container_width=True, height=400)
+                    # Create display dataframe with formatted values
+                    lost_df_display = lost_df.copy()
+                    lost_df_display['Current AR Rate'] = lost_df_display['Current AR Rate'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    lost_df_display['Previous AR Rate'] = lost_df_display['Previous AR Rate'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
+                    lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    # Download button
+                    st.dataframe(lost_df_display, use_container_width=True, height=400)
+
+                    # Download button (with unformatted data for Excel)
                     st.download_button(
                         label=":material/download: Download Lost Adoption List (CSV)",
                         data=lost_df.to_csv(index=False).encode('utf-8'),
@@ -1022,24 +1055,61 @@ else:
                 if len(gained_adoption_ids) > 0:
                     st.markdown("### 🔺 Customers Who Gained Adoption")
 
-                    # Get details from latest snapshot for these customers
-                    gained_customers = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(gained_adoption_ids)].copy()
+                    # Get details from both snapshots for these customers
+                    gained_customers_latest = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(gained_adoption_ids)].copy()
+                    gained_customers_prev = previous_snapshot[previous_snapshot['CRM_ACCOUNT_ID'].isin(gained_adoption_ids)].copy()
 
-                    # Deduplicate by CRM account
-                    gained_customers_unique = gained_customers.drop_duplicates(subset=['CRM_ACCOUNT_ID'])
+                    # Aggregate metrics by CRM account for both snapshots
+                    # Latest snapshot
+                    gained_latest_agg = gained_customers_latest.groupby('CRM_ACCOUNT_ID').agg({
+                        'CRM_ACCOUNT_NAME': 'first',
+                        'CRM_REGION': 'first',
+                        'CRM_ARR_BAND_BROAD': 'first',
+                        'CRM_MARKET_SEGMENT': 'first',
+                        'OVERALL_AR_RATE': 'mean',  # Average AR rate across instances
+                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'  # Sum ARs across instances
+                    }).reset_index()
 
-                    # Select relevant columns
-                    available_display_cols = [col for col in display_cols if col in gained_customers_unique.columns]
+                    # Previous snapshot (may not exist if customer was just added)
+                    gained_prev_agg = gained_customers_prev.groupby('CRM_ACCOUNT_ID').agg({
+                        'OVERALL_AR_RATE': 'mean',
+                        'TOTAL_AUTOMATED_RESOLUTIONS': 'sum'
+                    }).reset_index()
 
-                    gained_df = gained_customers_unique[available_display_cols].sort_values('CRM_ACCOUNT_NAME')
+                    # Merge current and previous data
+                    gained_df = gained_latest_agg.merge(
+                        gained_prev_agg,
+                        on='CRM_ACCOUNT_ID',
+                        how='left',
+                        suffixes=('_Current', '_Previous')
+                    )
 
-                    # Format AR rate as percentage
-                    if 'OVERALL_AR_RATE' in gained_df.columns:
-                        gained_df['OVERALL_AR_RATE'] = gained_df['OVERALL_AR_RATE'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    # Rename columns for clarity
+                    gained_df = gained_df.rename(columns={
+                        'OVERALL_AR_RATE_Current': 'Current AR Rate',
+                        'OVERALL_AR_RATE_Previous': 'Previous AR Rate',
+                        'TOTAL_AUTOMATED_RESOLUTIONS_Current': 'Current ARs (28d)',
+                        'TOTAL_AUTOMATED_RESOLUTIONS_Previous': 'Previous ARs (28d)'
+                    })
 
-                    st.dataframe(gained_df, use_container_width=True, height=400)
+                    # Reorder columns
+                    column_order = [
+                        'CRM_ACCOUNT_NAME', 'CRM_ACCOUNT_ID', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'Current AR Rate', 'Previous AR Rate',
+                        'Current ARs (28d)', 'Previous ARs (28d)'
+                    ]
+                    gained_df = gained_df[column_order].sort_values('CRM_ACCOUNT_NAME')
 
-                    # Download button
+                    # Create display dataframe with formatted values
+                    gained_df_display = gained_df.copy()
+                    gained_df_display['Current AR Rate'] = gained_df_display['Current AR Rate'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    gained_df_display['Previous AR Rate'] = gained_df_display['Previous AR Rate'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    gained_df_display['Current ARs (28d)'] = gained_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
+                    gained_df_display['Previous ARs (28d)'] = gained_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
+
+                    st.dataframe(gained_df_display, use_container_width=True, height=400)
+
+                    # Download button (with unformatted data for Excel)
                     st.download_button(
                         label=":material/download: Download Gained Adoption List (CSV)",
                         data=gained_df.to_csv(index=False).encode('utf-8'),
