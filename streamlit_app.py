@@ -196,10 +196,10 @@ def calculate_scorecard_metrics(df):
 
     # Clean numeric columns
     numeric_columns = [
-        'TOTAL_AUTOMATED_RESOLUTIONS', 'TOTAL_BOT_INTERACTIONS', 'TOTAL_CREATED_TICKETS_28D',
-        'EMAIL_AUTOMATED_RESOLUTIONS', 'MSG_AUTOMATED_RESOLUTIONS',
-        'EMAIL_BOT_INTERACTIONS', 'MSG_BOT_INTERACTIONS',
-        'EMAIL_AR_RATE', 'MSG_AR_RATE', 'OVERALL_AR_RATE',
+        'AUTOMATED_RESOLUTIONS_PAID', 'BOT_INTERACTIONS_PAID', 'TOTAL_CREATED_TICKETS_28D',
+        'EMAIL_AUTOMATED_RESOLUTIONS_PAID', 'MSG_AUTOMATED_RESOLUTIONS_PAID',
+        'EMAIL_BOT_INTERACTIONS_PAID', 'MSG_BOT_INTERACTIONS_PAID',
+        'EMAIL_AR_RATE_PAID', 'MSG_AR_RATE_PAID', 'AR_RATE_PAID',
         'OVERALL_BOT_DEPLOYED_SHARE', 'ACTIVE_INTEGRATIONS_28D',
         'TOP_BOX_5_STAR_28D', 'TOTAL_RESPONSES_28D', 'TENURE_MONTHS',
         'AUTOMATED_RESOLUTIONS_NET_ARR_USD', 'ALLOWANCE_PERIOD_MONTHS',
@@ -292,9 +292,9 @@ def calculate_scorecard_metrics(df):
             metrics['Instance adoption %'] = 0
 
         # AR Rates - only instances with > 0 ARs
-        ar_filter = snapshot['OVERALL_AR_RATE'] > 0
+        ar_filter = snapshot['AR_RATE_PAID'] > 0
         if ar_filter.sum() > 0:
-            metrics['Median AR Rate'] = snapshot[ar_filter]['OVERALL_AR_RATE'].median()
+            metrics['Median AR Rate'] = snapshot[ar_filter]['AR_RATE_PAID'].median()
         else:
             metrics['Median AR Rate'] = 0
 
@@ -319,36 +319,36 @@ def calculate_scorecard_metrics(df):
             metrics['AR Utilization Run Rate'] = 0
 
         # Channel-specific AR rates (only instances with > 0 ARs)
-        email_ar_filter = snapshot['EMAIL_AR_RATE'] > 0
+        email_ar_filter = snapshot['EMAIL_AR_RATE_PAID'] > 0
         if email_ar_filter.sum() > 0:
-            metrics['Median AR Rate - Email'] = snapshot[email_ar_filter]['EMAIL_AR_RATE'].median()
+            metrics['Median AR Rate - Email'] = snapshot[email_ar_filter]['EMAIL_AR_RATE_PAID'].median()
         else:
             metrics['Median AR Rate - Email'] = 0
 
-        msg_ar_filter = snapshot['MSG_AR_RATE'] > 0
+        msg_ar_filter = snapshot['MSG_AR_RATE_PAID'] > 0
         if msg_ar_filter.sum() > 0:
-            metrics['Median AR Rate - Messaging'] = snapshot[msg_ar_filter]['MSG_AR_RATE'].median()
+            metrics['Median AR Rate - Messaging'] = snapshot[msg_ar_filter]['MSG_AR_RATE_PAID'].median()
         else:
             metrics['Median AR Rate - Messaging'] = 0
 
         # AR Rate buckets - Count unique instances (not rows)
         # Formula: AR>0, AR<0.3 (data already filtered by product type)
         ar_0_30_filter = (
-            (snapshot['OVERALL_AR_RATE'] > 0) &
-            (snapshot['OVERALL_AR_RATE'] < 0.3)
+            (snapshot['AR_RATE_PAID'] > 0) &
+            (snapshot['AR_RATE_PAID'] < 0.3)
         )
         metrics['Instances AR 0-30%'] = snapshot[ar_0_30_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # Formula: AR>=0.3 (data already filtered by product type)
-        ar_30_plus_filter = (snapshot['OVERALL_AR_RATE'] >= 0.3)
+        ar_30_plus_filter = (snapshot['AR_RATE_PAID'] >= 0.3)
         metrics['Instances AR 30%+'] = snapshot[ar_30_plus_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # Total active instances with bot deployed
         # Data already filtered by product type
-        if 'FIRST_BOT_DEPLOYED_DATE' in snapshot.columns:
+        if 'FIRST_BOT_DEPLOYED_DATE_PAID' in snapshot.columns:
             bot_deployed_filter = (
-                (snapshot['FIRST_BOT_DEPLOYED_DATE'].notna()) &
-                (snapshot['FIRST_BOT_DEPLOYED_DATE'] != '')
+                (snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'].notna()) &
+                (snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'] != '')
             )
             metrics['Total active instances with bot deployed'] = bot_deployed_filter.sum()
         else:
@@ -356,7 +356,7 @@ def calculate_scorecard_metrics(df):
 
         # Bot deployed share % - # bot interactions / # tickets
         total_tickets = snapshot['TOTAL_CREATED_TICKETS_28D'].sum()
-        total_bot_interactions = snapshot['TOTAL_BOT_INTERACTIONS'].sum()
+        total_bot_interactions = snapshot['BOT_INTERACTIONS_PAID'].sum()
         if total_tickets > 0:
             metrics['Bot deployed share %'] = total_bot_interactions / total_tickets
         else:
@@ -367,10 +367,10 @@ def calculate_scorecard_metrics(df):
         metrics['Bot deployed share - denominator'] = total_tickets
 
         # Automated Resolutions
-        metrics['Total ARs (28d)'] = snapshot['TOTAL_AUTOMATED_RESOLUTIONS'].sum()
+        metrics['Total ARs (28d)'] = snapshot['AUTOMATED_RESOLUTIONS_PAID'].sum()
 
         # Bot interactions
-        metrics['Total Bot Interactions (28d)'] = snapshot['TOTAL_BOT_INTERACTIONS'].sum()
+        metrics['Total Bot Interactions (28d)'] = snapshot['BOT_INTERACTIONS_PAID'].sum()
 
         # Tickets
         metrics['Total Tickets (28d)'] = snapshot['TOTAL_CREATED_TICKETS_28D'].sum()
@@ -424,11 +424,11 @@ def calculate_scorecard_metrics(df):
 
         # Bots deployed this week - Formula: FIRST_BOT_DEPLOYED_DATE > previous_week AND <= current_week
         # Data already filtered by product type
-        if 'FIRST_BOT_DEPLOYED_DATE' in snapshot.columns:
-            snapshot['FIRST_BOT_DEPLOYED_DATE'] = pd.to_datetime(snapshot['FIRST_BOT_DEPLOYED_DATE'], errors='coerce')
+        if 'FIRST_BOT_DEPLOYED_DATE_PAID' in snapshot.columns:
+            snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'] = pd.to_datetime(snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'], errors='coerce')
             bots_deployed_filter = (
-                (snapshot['FIRST_BOT_DEPLOYED_DATE'] > one_week_ago) &
-                (snapshot['FIRST_BOT_DEPLOYED_DATE'] <= date)
+                (snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'] > one_week_ago) &
+                (snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'] <= date)
             )
             metrics['Bots deployed this week'] = snapshot[bots_deployed_filter]['INSTANCE_ACCOUNT_ID'].nunique()
         else:
@@ -1318,7 +1318,7 @@ else:
         st.subheader("Data Explorer")
 
         all_columns = gdf.columns.tolist()
-        default_cols = ['SOURCE_SNAPSHOT_DATE', 'INSTANCE_ACCOUNT_SUBDOMAIN', 'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'OVERALL_AR_RATE']
+        default_cols = ['SOURCE_SNAPSHOT_DATE', 'INSTANCE_ACCOUNT_SUBDOMAIN', 'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'AR_RATE_PAID']
         default_cols = [col for col in default_cols if col in all_columns]
 
         selected_columns = st.multiselect("Select columns", all_columns, default=default_cols if default_cols else all_columns[:10])
