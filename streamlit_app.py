@@ -33,6 +33,79 @@ if "global_data" not in st.session_state:
 if "last_load_time" not in st.session_state:
     st.session_state.last_load_time = None
 
+def init_notes_table():
+    """Initialize the notes table if it doesn't exist"""
+    try:
+        session = get_active_session()
+
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES (
+            CRM_ACCOUNT_ID VARCHAR(255),
+            CRM_ACCOUNT_NAME VARCHAR(500),
+            SNAPSHOT_DATE DATE,
+            NOTES TEXT,
+            CREATED_BY VARCHAR(255),
+            CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+            UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+            PRIMARY KEY (CRM_ACCOUNT_ID, SNAPSHOT_DATE)
+        )
+        """
+        session.sql(create_table_sql).collect()
+        return True
+    except Exception as e:
+        st.error(f"Error initializing notes table: {e}")
+        return False
+
+def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email):
+    """Save or update a note for a customer"""
+    try:
+        session = get_active_session()
+
+        # Use MERGE to insert or update
+        merge_sql = f"""
+        MERGE INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES AS target
+        USING (
+            SELECT
+                '{crm_account_id}' AS CRM_ACCOUNT_ID,
+                '{crm_account_name.replace("'", "''")}' AS CRM_ACCOUNT_NAME,
+                '{snapshot_date}'::DATE AS SNAPSHOT_DATE,
+                '{notes.replace("'", "''")}' AS NOTES,
+                '{user_email}' AS CREATED_BY,
+                CURRENT_TIMESTAMP() AS UPDATED_AT
+        ) AS source
+        ON target.CRM_ACCOUNT_ID = source.CRM_ACCOUNT_ID
+           AND target.SNAPSHOT_DATE = source.SNAPSHOT_DATE
+        WHEN MATCHED THEN
+            UPDATE SET
+                NOTES = source.NOTES,
+                UPDATED_AT = source.UPDATED_AT
+        WHEN NOT MATCHED THEN
+            INSERT (CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, SNAPSHOT_DATE, NOTES, CREATED_BY, UPDATED_AT)
+            VALUES (source.CRM_ACCOUNT_ID, source.CRM_ACCOUNT_NAME, source.SNAPSHOT_DATE,
+                    source.NOTES, source.CREATED_BY, source.UPDATED_AT)
+        """
+        session.sql(merge_sql).collect()
+        return True
+    except Exception as e:
+        st.error(f"Error saving note: {e}")
+        return False
+
+def load_notes(snapshot_date):
+    """Load all notes for a specific snapshot date"""
+    try:
+        session = get_active_session()
+
+        query = f"""
+        SELECT CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, NOTES, CREATED_BY, UPDATED_AT
+        FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
+        WHERE SNAPSHOT_DATE = '{snapshot_date}'::DATE
+        """
+        df = session.sql(query).to_pandas()
+        return df
+    except Exception as e:
+        # Table might not exist yet
+        return pd.DataFrame(columns=['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'NOTES', 'CREATED_BY', 'UPDATED_AT'])
+
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_data_from_snowflake():
     """Load data from Snowflake table"""
@@ -1022,11 +1095,21 @@ else:
                         'TOTAL_AUTOMATED_RESOLUTIONS_Previous': 'Previous ARs (28d)'
                     })
 
+                    # Initialize notes table
+                    init_notes_table()
+
+                    # Load existing notes for this snapshot
+                    existing_notes = load_notes(latest_date)
+                    notes_dict = dict(zip(existing_notes['CRM_ACCOUNT_ID'], existing_notes['NOTES'])) if len(existing_notes) > 0 else {}
+
+                    # Merge notes into the dataframe
+                    lost_df['Notes'] = lost_df['CRM_ACCOUNT_ID'].map(notes_dict).fillna('')
+
                     # Reorder columns
                     column_order = [
-                        'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
                         'Current AR Rate', 'Previous AR Rate',
-                        'Current ARs (28d)', 'Previous ARs (28d)'
+                        'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
                     ]
                     lost_df = lost_df[column_order].sort_values('CRM_ACCOUNT_NAME')
 
@@ -1037,12 +1120,53 @@ else:
                     lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
                     lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    st.dataframe(lost_df_display, use_container_width=True, height=400)
+                    # Remove CRM_ACCOUNT_ID from display
+                    lost_df_display_no_id = lost_df_display.drop(columns=['CRM_ACCOUNT_ID'])
+                    st.dataframe(lost_df_display_no_id, use_container_width=True, height=400)
 
-                    # Download button (with unformatted data for Excel)
+                    # Add notes input section
+                    st.markdown("#### 📝 Add/Edit Notes")
+                    st.info("Select a customer and add notes to explain why they are unadopted.")
+
+                    # Get current user
+                    try:
+                        session = get_active_session()
+                        current_user = session.sql("SELECT CURRENT_USER()").collect()[0][0]
+                    except:
+                        current_user = "unknown_user"
+
+                    # Customer selector
+                    customer_names = lost_df[['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME']].values.tolist()
+                    customer_display = [f"{name}" for id, name in customer_names]
+                    customer_map = {f"{name}": id for id, name in customer_names}
+
+                    selected_customer = st.selectbox("Select Customer", customer_display, key="lost_customer_select")
+
+                    if selected_customer:
+                        selected_id = customer_map[selected_customer]
+                        existing_note = notes_dict.get(selected_id, "")
+
+                        note_text = st.text_area(
+                            "Notes",
+                            value=existing_note,
+                            height=100,
+                            placeholder="Enter notes explaining why this customer is unadopted...",
+                            key=f"note_input_{selected_id}"
+                        )
+
+                        if st.button("💾 Save Note", key=f"save_note_{selected_id}"):
+                            if save_note(selected_id, selected_customer, latest_date, note_text, current_user):
+                                st.success(f"✓ Note saved for {selected_customer}")
+                                st.rerun()
+                            else:
+                                st.error("Failed to save note")
+
+                    # Download button (with unformatted data for Excel, excluding CRM_ACCOUNT_ID)
+                    st.divider()
+                    lost_df_download = lost_df.drop(columns=['CRM_ACCOUNT_ID'])
                     st.download_button(
-                        label=":material/download: Download Lost Adoption List (CSV)",
-                        data=lost_df.to_csv(index=False).encode('utf-8'),
+                        label=":material/download: Download Lost Adoption List with Notes (CSV)",
+                        data=lost_df_download.to_csv(index=False).encode('utf-8'),
                         file_name=f"lost_adoption_{previous_date.strftime('%Y%m%d')}_to_{latest_date.strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
