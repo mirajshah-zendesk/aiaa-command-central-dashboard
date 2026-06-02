@@ -100,6 +100,8 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
             WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
               AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
             """
+            st.info(f"Executing UPDATE SQL (notes length: {len(notes)} chars)")
+            st.code(update_sql, language="sql")
             session.sql(update_sql).collect()
         else:
             # Insert new record
@@ -115,6 +117,8 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
                 CURRENT_TIMESTAMP()
             )
             """
+            st.info(f"Executing INSERT SQL (notes length: {len(notes)} chars)")
+            st.code(insert_sql, language="sql")
             session.sql(insert_sql).collect()
 
         return True
@@ -1212,6 +1216,15 @@ else:
                         )
 
                         if st.button("💾 Save Note", key=f"save_note_{selected_id}"):
+                            # Debug: show what we're about to save
+                            st.write("**Debug - About to save:**")
+                            st.write(f"- CRM Account ID: `{selected_id}`")
+                            st.write(f"- Customer Name: `{selected_customer}`")
+                            st.write(f"- Snapshot Date: `{latest_date}`")
+                            st.write(f"- Note Text: `{note_text}`")
+                            st.write(f"- Note Length: {len(note_text)} characters")
+                            st.write(f"- User: `{current_user}`")
+
                             with st.spinner("Saving note..."):
                                 success = save_note(selected_id, selected_customer, latest_date, note_text, current_user)
                             if success:
