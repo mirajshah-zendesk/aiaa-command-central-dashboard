@@ -67,35 +67,61 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
         else:
             snapshot_date_str = str(snapshot_date)
 
-        # Use parameterized query with bind variables to avoid SQL injection and escaping issues
-        merge_sql = """
-        MERGE INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES AS target
-        USING (
-            SELECT
-                ? AS CRM_ACCOUNT_ID,
-                ? AS CRM_ACCOUNT_NAME,
-                ?::DATE AS SNAPSHOT_DATE,
-                ? AS NOTES,
-                ? AS CREATED_BY,
-                CURRENT_TIMESTAMP() AS UPDATED_AT
-        ) AS source
-        ON target.CRM_ACCOUNT_ID = source.CRM_ACCOUNT_ID
-           AND target.SNAPSHOT_DATE = source.SNAPSHOT_DATE
-        WHEN MATCHED THEN
-            UPDATE SET
-                NOTES = source.NOTES,
-                UPDATED_AT = source.UPDATED_AT
-        WHEN NOT MATCHED THEN
-            INSERT (CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, SNAPSHOT_DATE, NOTES, CREATED_BY, UPDATED_AT)
-            VALUES (source.CRM_ACCOUNT_ID, source.CRM_ACCOUNT_NAME, source.SNAPSHOT_DATE,
-                    source.NOTES, source.CREATED_BY, source.UPDATED_AT)
-        """
+        # Create a temporary dataframe with the data to merge
+        from snowflake.snowpark.functions import lit, current_timestamp
 
-        # Execute with bind parameters
-        session.sql(merge_sql, params=[crm_account_id, crm_account_name, snapshot_date_str, notes, user_email]).collect()
+        temp_df = session.create_dataframe([{
+            'CRM_ACCOUNT_ID': crm_account_id,
+            'CRM_ACCOUNT_NAME': crm_account_name,
+            'SNAPSHOT_DATE': snapshot_date_str,
+            'NOTES': notes,
+            'CREATED_BY': user_email
+        }])
+
+        # Write to a temporary stage or use direct merge
+        # For now, let's try a simpler approach: check if exists, then update or insert
+
+        # Check if record exists
+        check_sql = f"""
+        SELECT COUNT(*) as cnt
+        FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
+        WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
+          AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
+        """
+        result = session.sql(check_sql).collect()
+        exists = result[0]['CNT'] > 0
+
+        if exists:
+            # Update existing record
+            update_sql = f"""
+            UPDATE STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
+            SET NOTES = $${notes}$$,
+                UPDATED_AT = CURRENT_TIMESTAMP()
+            WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
+              AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
+            """
+            session.sql(update_sql).collect()
+        else:
+            # Insert new record
+            insert_sql = f"""
+            INSERT INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
+            (CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, SNAPSHOT_DATE, NOTES, CREATED_BY, UPDATED_AT)
+            VALUES (
+                '{crm_account_id}',
+                $${crm_account_name}$$,
+                '{snapshot_date_str}'::DATE,
+                $${notes}$$,
+                '{user_email}',
+                CURRENT_TIMESTAMP()
+            )
+            """
+            session.sql(insert_sql).collect()
+
         return True
     except Exception as e:
         st.error(f"Error saving note: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return False
 
 def load_notes(snapshot_date):
