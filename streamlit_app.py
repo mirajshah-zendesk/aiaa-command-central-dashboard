@@ -67,20 +67,16 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
         else:
             snapshot_date_str = str(snapshot_date)
 
-        # Escape single quotes in strings
-        crm_account_name_escaped = crm_account_name.replace("'", "''")
-        notes_escaped = notes.replace("'", "''")
-
-        # Use MERGE to insert or update
-        merge_sql = f"""
+        # Use parameterized query with bind variables to avoid SQL injection and escaping issues
+        merge_sql = """
         MERGE INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES AS target
         USING (
             SELECT
-                '{crm_account_id}' AS CRM_ACCOUNT_ID,
-                '{crm_account_name_escaped}' AS CRM_ACCOUNT_NAME,
-                '{snapshot_date_str}'::DATE AS SNAPSHOT_DATE,
-                '{notes_escaped}' AS NOTES,
-                '{user_email}' AS CREATED_BY,
+                ? AS CRM_ACCOUNT_ID,
+                ? AS CRM_ACCOUNT_NAME,
+                ?::DATE AS SNAPSHOT_DATE,
+                ? AS NOTES,
+                ? AS CREATED_BY,
                 CURRENT_TIMESTAMP() AS UPDATED_AT
         ) AS source
         ON target.CRM_ACCOUNT_ID = source.CRM_ACCOUNT_ID
@@ -94,7 +90,9 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
             VALUES (source.CRM_ACCOUNT_ID, source.CRM_ACCOUNT_NAME, source.SNAPSHOT_DATE,
                     source.NOTES, source.CREATED_BY, source.UPDATED_AT)
         """
-        session.sql(merge_sql).collect()
+
+        # Execute with bind parameters
+        session.sql(merge_sql, params=[crm_account_id, crm_account_name, snapshot_date_str, notes, user_email]).collect()
         return True
     except Exception as e:
         st.error(f"Error saving note: {e}")
