@@ -931,38 +931,38 @@ else:
 
                 current = current_row.iloc[0]['# Customers']
 
-                # WoW change (exact match for 7 days ago)
+                # WoW change (exact match for 7 days ago) - as percentage
                 wow_change = None
                 one_week_ago = latest_date - pd.Timedelta(days=7)
                 prev_week_data = cohort_data[cohort_data['Date'] == one_week_ago]
                 if len(prev_week_data) > 0:
                     prev_week = prev_week_data.iloc[0]['# Customers']
-                    if not pd.isna(prev_week):
-                        wow_change = current - prev_week
+                    if not pd.isna(prev_week) and prev_week > 0:
+                        wow_change = ((current - prev_week) / prev_week) * 100
 
-                # 4-week change (exact match for 28 days ago)
+                # 4-week change (exact match for 28 days ago) - as percentage
                 four_week_change = None
                 four_weeks_ago = latest_date - pd.Timedelta(days=28)
                 four_week_data = cohort_data[cohort_data['Date'] == four_weeks_ago]
                 if len(four_week_data) > 0:
                     four_week_val = four_week_data.iloc[0]['# Customers']
-                    if not pd.isna(four_week_val):
-                        four_week_change = current - four_week_val
+                    if not pd.isna(four_week_val) and four_week_val > 0:
+                        four_week_change = ((current - four_week_val) / four_week_val) * 100
 
-                # QTD change (quarter-to-date)
+                # QTD change (quarter-to-date) - as percentage
                 qtd_change = None
                 quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
                 qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
                 if len(qtd_data) >= 2:
                     qtd_first = qtd_data.iloc[0]['# Customers']
-                    if not pd.isna(qtd_first):
-                        qtd_change = current - qtd_first
+                    if not pd.isna(qtd_first) and qtd_first > 0:
+                        qtd_change = ((current - qtd_first) / qtd_first) * 100
 
                 # Format values
                 current_str = f"{int(current):,}"
-                wow_str = f"{wow_change:+,.0f}" if wow_change is not None else "—"
-                four_week_str = f"{four_week_change:+,.0f}" if four_week_change is not None else "—"
-                qtd_str = f"{qtd_change:+,.0f}" if qtd_change is not None else "—"
+                wow_str = f"{wow_change:+.1f}%" if wow_change is not None else "—"
+                four_week_str = f"{four_week_change:+.1f}%" if four_week_change is not None else "—"
+                qtd_str = f"{qtd_change:+.1f}%" if qtd_change is not None else "—"
 
                 return current_str, wow_str, four_week_str, qtd_str
 
