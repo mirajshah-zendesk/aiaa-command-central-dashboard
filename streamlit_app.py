@@ -486,6 +486,9 @@ def calculate_cohort_metrics(df):
         cohort_counts.columns = ['Cohort', '# Customers']
         cohort_counts['Date'] = date
 
+        # Exclude "not penetrated" cohort
+        cohort_counts = cohort_counts[~cohort_counts['Cohort'].str.lower().str.contains('not penetrated', na=False)]
+
         cohort_metrics_list.append(cohort_counts)
 
     if len(cohort_metrics_list) == 0:
