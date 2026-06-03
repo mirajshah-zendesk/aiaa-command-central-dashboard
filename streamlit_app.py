@@ -205,7 +205,7 @@ def calculate_scorecard_metrics(df):
         'AUTOMATED_RESOLUTIONS_NET_ARR_USD', 'ALLOWANCE_PERIOD_MONTHS',
         'DAYS_INTO_ALLOWANCE_CYCLE', 'TOTAL_ALLOWANCE',
         'PRORATED_ALLOWANCE_LAST_28D', 'AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED',
-        'VERIFIED_RESOLUTIONS_PAID', 'CONTAINED_RESOLUTIONS_PAID'
+        'VERIFIED_AUTOMATED_RESOLUTION_RATE_PAID'
     ]
 
     for col in numeric_columns:
@@ -370,18 +370,6 @@ def calculate_scorecard_metrics(df):
         # Automated Resolutions
         metrics['Total ARs (28d)'] = snapshot['AUTOMATED_RESOLUTIONS_PAID'].sum()
 
-        # Verified Resolutions
-        if 'VERIFIED_RESOLUTIONS_PAID' in snapshot.columns:
-            metrics['Total Verified Resolutions (28d)'] = snapshot['VERIFIED_RESOLUTIONS_PAID'].sum()
-        else:
-            metrics['Total Verified Resolutions (28d)'] = 0
-
-        # Contained Resolutions
-        if 'CONTAINED_RESOLUTIONS_PAID' in snapshot.columns:
-            metrics['Total Contained Resolutions (28d)'] = snapshot['CONTAINED_RESOLUTIONS_PAID'].sum()
-        else:
-            metrics['Total Contained Resolutions (28d)'] = 0
-
         # Bot interactions
         metrics['Total Bot Interactions (28d)'] = snapshot['BOT_INTERACTIONS_PAID'].sum()
 
@@ -402,6 +390,21 @@ def calculate_scorecard_metrics(df):
             (snapshot['ACTIVE_INTEGRATIONS_28D'] > 0)
         )
         metrics['# instances with integrations'] = snapshot[integration_filter]['INSTANCE_ACCOUNT_ID'].nunique()
+
+        # Verified Resolution Rate Categories (CRM level)
+        # Categories: Poor (<50%), Acceptable (50-80%), Optimal (>80%)
+        if 'VERIFIED_AUTOMATED_RESOLUTION_RATE_PAID' in snapshot.columns:
+            # Group by CRM account and calculate average verified rate across instances
+            crm_verified_rates = snapshot.groupby('CRM_ACCOUNT_ID')['VERIFIED_AUTOMATED_RESOLUTION_RATE_PAID'].mean()
+
+            # Count customers in each category
+            metrics['Customers - Poor Verified (<50%)'] = (crm_verified_rates < 0.5).sum()
+            metrics['Customers - Acceptable Verified (50-80%)'] = ((crm_verified_rates >= 0.5) & (crm_verified_rates <= 0.8)).sum()
+            metrics['Customers - Optimal Verified (>80%)'] = (crm_verified_rates > 0.8).sum()
+        else:
+            metrics['Customers - Poor Verified (<50%)'] = 0
+            metrics['Customers - Acceptable Verified (50-80%)'] = 0
+            metrics['Customers - Optimal Verified (>80%)'] = 0
 
         # Gen3 classification (operates on already-filtered data)
         if 'GEN2_3_CLASSIFICATION' in snapshot.columns:
@@ -833,8 +836,11 @@ else:
                     ("Instances AR 0-30%", "Instances AR 0-30%", "number"),
                     ("Instances AR 30%+", "Instances AR 30%+", "number"),
                     ("Total ARs (28d)", "Total ARs (28d)", "number"),
-                    ("Total Verified Resolutions (28d)", "Total Verified Resolutions (28d)", "number"),
-                    ("Total Contained Resolutions (28d)", "Total Contained Resolutions (28d)", "number"),
+                ],
+                "✅ Verified Resolution Quality": [
+                    ("Poor (<50% Verified)", "Customers - Poor Verified (<50%)", "number"),
+                    ("Acceptable (50-80% Verified)", "Customers - Acceptable Verified (50-80%)", "number"),
+                    ("Optimal (>80% Verified)", "Customers - Optimal Verified (>80%)", "number"),
                 ],
                 "🚀 Bot Deployment": [
                     ("Total Active Instances with Bot", "Total active instances with bot deployed", "number"),
