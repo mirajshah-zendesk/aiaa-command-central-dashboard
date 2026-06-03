@@ -967,12 +967,28 @@ else:
             st.markdown("### 📊 Customer Counts by Cohort")
 
             table_data = []
+            # First pass: collect raw numbers for percentage calculation
+            cohort_raw_data = {}
+            for cohort in sorted(latest_cohorts['Cohort'].unique()):
+                cohort_data = latest_cohorts[latest_cohorts['Cohort'] == cohort]
+                if len(cohort_data) > 0:
+                    cohort_raw_data[cohort] = cohort_data.iloc[0]['# Customers']
+
+            # Calculate total customers
+            total_customers = sum(cohort_raw_data.values())
+
+            # Second pass: build table with percentages
             for cohort in sorted(latest_cohorts['Cohort'].unique()):
                 current, wow, four_week, qtd = calculate_cohort_changes(cohort)
                 if current is not None:
+                    # Calculate percentage
+                    raw_count = cohort_raw_data.get(cohort, 0)
+                    pct_of_total = (raw_count / total_customers * 100) if total_customers > 0 else 0
+
                     table_data.append({
                         "Cohort": cohort,
                         "Current # Customers": current,
+                        "% of Total": f"{pct_of_total:.1f}%",
                         "WoW Change": wow,
                         "4-Week Change": four_week,
                         "QTD Change": qtd
