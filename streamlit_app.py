@@ -512,7 +512,7 @@ def calculate_cohort_metrics(df):
         cohort_counts = snapshot_penetrated.groupby('COHORT').agg(
             **{
                 '# Customers': ('CRM_ACCOUNT_ID', 'nunique'),
-                '# Instances': ('COHORT', 'size'),
+                '# Instances': ('INSTANCE_ACCOUNT_ID', 'nunique'),
             }
         ).reset_index()
         cohort_counts.columns = ['Cohort', '# Customers', '# Instances']
@@ -1019,7 +1019,7 @@ else:
 
             # Build cohort table
             st.markdown("### 📊 Customer & Instance Counts by Cohort")
-            st.caption("**# Customers** = distinct CRM accounts in the cohort. **# Instances** = rows in the mart (matches `SELECT COUNT(*) FROM ai_agents_advanced_command_central`).")
+            st.caption("**# Customers** = distinct CRM accounts in the cohort. **# Instances** = distinct instance subdomains in the cohort.")
 
             table_data = []
             # First pass: collect raw numbers for percentage calculation
