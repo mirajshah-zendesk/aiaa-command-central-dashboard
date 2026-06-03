@@ -205,7 +205,8 @@ def calculate_scorecard_metrics(df):
         'AUTOMATED_RESOLUTIONS_NET_ARR_USD', 'ALLOWANCE_PERIOD_MONTHS',
         'DAYS_INTO_ALLOWANCE_CYCLE', 'TOTAL_ALLOWANCE',
         'PRORATED_ALLOWANCE_LAST_28D', 'AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED',
-        'VERIFIED_AUTOMATED_RESOLUTION_RATE_PAID'
+        'VERIFIED_AUTOMATED_RESOLUTION_RATE_PAID',
+        'TOTAL_INTENT_COUNT_28D', 'PROCEDURES_COUNT_28D', 'DIALOGUE_FLOWS_COUNT_28D'
     ]
 
     for col in numeric_columns:
@@ -390,6 +391,33 @@ def calculate_scorecard_metrics(df):
             (snapshot['ACTIVE_INTEGRATIONS_28D'] > 0)
         )
         metrics['# instances with integrations'] = snapshot[integration_filter]['INSTANCE_ACCOUNT_ID'].nunique()
+
+        # Dialogue Flows - instances with dialogue flows configured
+        if 'DIALOGUE_FLOWS_COUNT_28D' in snapshot.columns:
+            dialogue_flows_filter = snapshot['DIALOGUE_FLOWS_COUNT_28D'] > 0
+            metrics['# instances with dialogue flows'] = snapshot[dialogue_flows_filter]['INSTANCE_ACCOUNT_ID'].nunique()
+        else:
+            metrics['# instances with dialogue flows'] = 0
+
+        # Procedures - instances with procedures configured
+        if 'PROCEDURES_COUNT_28D' in snapshot.columns:
+            procedures_filter = snapshot['PROCEDURES_COUNT_28D'] > 0
+            metrics['# instances with procedures'] = snapshot[procedures_filter]['INSTANCE_ACCOUNT_ID'].nunique()
+        else:
+            metrics['# instances with procedures'] = 0
+
+        # Total penetrated instances (for percentage calculations)
+        metrics['Total penetrated instances'] = snapshot['INSTANCE_ACCOUNT_ID'].nunique()
+
+        # Calculate percentages
+        if metrics['Total penetrated instances'] > 0:
+            metrics['% instances with integrations'] = (metrics['# instances with integrations'] / metrics['Total penetrated instances']) * 100
+            metrics['% instances with dialogue flows'] = (metrics['# instances with dialogue flows'] / metrics['Total penetrated instances']) * 100
+            metrics['% instances with procedures'] = (metrics['# instances with procedures'] / metrics['Total penetrated instances']) * 100
+        else:
+            metrics['% instances with integrations'] = 0
+            metrics['% instances with dialogue flows'] = 0
+            metrics['% instances with procedures'] = 0
 
         # Verified Resolution Rate Categories (CRM level)
         # Categories: Poor (<50%), Acceptable (50-80%), Optimal (>80%)
@@ -828,10 +856,18 @@ else:
                     ("Median AR Rate", "Median AR Rate", "percent"),
                     ("Median AR Rate - Email", "Median AR Rate - Email", "percent"),
                     ("Median AR Rate - Messaging", "Median AR Rate - Messaging", "percent"),
-                    ("# Instances with Integrations", "# instances with integrations", "number"),
                     ("Instances AR 0-30%", "Instances AR 0-30%", "number"),
                     ("Instances AR 30%+", "Instances AR 30%+", "number"),
                     ("Total ARs (28d)", "Total ARs (28d)", "number"),
+                ],
+                "🔧 Integrations, Dialogue Flows & Procedures": [
+                    ("# Instances with Integrations", "# instances with integrations", "number"),
+                    ("% Instances with Integrations", "% instances with integrations", "percent_decimal"),
+                    ("# Instances with Dialogue Flows", "# instances with dialogue flows", "number"),
+                    ("% Instances with Dialogue Flows", "% instances with dialogue flows", "percent_decimal"),
+                    ("# Instances with Procedures", "# instances with procedures", "number"),
+                    ("% Instances with Procedures", "% instances with procedures", "percent_decimal"),
+                    ("Total Penetrated Instances", "Total penetrated instances", "number"),
                 ],
                 "✅ Verified Resolution Quality": [
                     ("Poor (<50% Verified)", "Customers - Poor Verified (<50%)", "number"),
