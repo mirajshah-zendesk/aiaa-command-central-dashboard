@@ -584,20 +584,6 @@ with st.sidebar:
             key="product_filter"
         )
 
-        # Show product breakdown
-        if len(ai_product_options) > 0:
-            advanced_count = gdf[gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True]['INSTANCE_ACCOUNT_ID'].nunique()
-            essentials_only_count = gdf[(gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False) &
-                                        (gdf['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)]['INSTANCE_ACCOUNT_ID'].nunique()
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Advanced Instances", f"{advanced_count:,}")
-            with col2:
-                st.metric("Essentials-Only", f"{essentials_only_count:,}")
-
-            st.caption(f"ℹ️ Total: {advanced_count + essentials_only_count:,} instances (Advanced may overlap with Paid)")
-
 # Main content
 if st.session_state.global_data is None:
     # Welcome screen
