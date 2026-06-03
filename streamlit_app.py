@@ -915,7 +915,7 @@ else:
 
             st.markdown(f"**Latest Snapshot:** {latest_date.strftime('%Y-%m-%d') if isinstance(latest_date, pd.Timestamp) else str(latest_date)}")
 
-            # Helper function to calculate cohort changes
+            # Helper function to calculate cohort changes as percentage points
             def calculate_cohort_changes(cohort_name):
                 cohort_data = cohort_df[cohort_df['Cohort'] == cohort_name].copy()
                 cohort_data['Date'] = pd.to_datetime(cohort_data['Date'])
@@ -931,38 +931,49 @@ else:
 
                 current = current_row.iloc[0]['# Customers']
 
-                # WoW change (exact match for 7 days ago) - as percentage
+                # Calculate current % of total
+                total_current = cohort_df[cohort_df['Date'] == latest_date]['# Customers'].sum()
+                current_pct = (current / total_current * 100) if total_current > 0 else 0
+
+                # WoW change (exact match for 7 days ago) - as percentage points
                 wow_change = None
                 one_week_ago = latest_date - pd.Timedelta(days=7)
                 prev_week_data = cohort_data[cohort_data['Date'] == one_week_ago]
                 if len(prev_week_data) > 0:
                     prev_week = prev_week_data.iloc[0]['# Customers']
-                    if not pd.isna(prev_week) and prev_week > 0:
-                        wow_change = ((current - prev_week) / prev_week) * 100
+                    total_prev_week = cohort_df[cohort_df['Date'] == one_week_ago]['# Customers'].sum()
+                    if not pd.isna(prev_week) and total_prev_week > 0:
+                        prev_week_pct = (prev_week / total_prev_week * 100)
+                        wow_change = current_pct - prev_week_pct
 
-                # 4-week change (exact match for 28 days ago) - as percentage
+                # 4-week change (exact match for 28 days ago) - as percentage points
                 four_week_change = None
                 four_weeks_ago = latest_date - pd.Timedelta(days=28)
                 four_week_data = cohort_data[cohort_data['Date'] == four_weeks_ago]
                 if len(four_week_data) > 0:
                     four_week_val = four_week_data.iloc[0]['# Customers']
-                    if not pd.isna(four_week_val) and four_week_val > 0:
-                        four_week_change = ((current - four_week_val) / four_week_val) * 100
+                    total_four_weeks = cohort_df[cohort_df['Date'] == four_weeks_ago]['# Customers'].sum()
+                    if not pd.isna(four_week_val) and total_four_weeks > 0:
+                        four_week_pct = (four_week_val / total_four_weeks * 100)
+                        four_week_change = current_pct - four_week_pct
 
-                # QTD change (quarter-to-date) - as percentage
+                # QTD change (quarter-to-date) - as percentage points
                 qtd_change = None
                 quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
                 qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
                 if len(qtd_data) >= 2:
                     qtd_first = qtd_data.iloc[0]['# Customers']
-                    if not pd.isna(qtd_first) and qtd_first > 0:
-                        qtd_change = ((current - qtd_first) / qtd_first) * 100
+                    qtd_first_date = qtd_data.iloc[0]['Date']
+                    total_qtd_first = cohort_df[cohort_df['Date'] == qtd_first_date]['# Customers'].sum()
+                    if not pd.isna(qtd_first) and total_qtd_first > 0:
+                        qtd_first_pct = (qtd_first / total_qtd_first * 100)
+                        qtd_change = current_pct - qtd_first_pct
 
                 # Format values
                 current_str = f"{int(current):,}"
-                wow_str = f"{wow_change:+.1f}%" if wow_change is not None else "—"
-                four_week_str = f"{four_week_change:+.1f}%" if four_week_change is not None else "—"
-                qtd_str = f"{qtd_change:+.1f}%" if qtd_change is not None else "—"
+                wow_str = f"{wow_change:+.1f}pp" if wow_change is not None else "—"
+                four_week_str = f"{four_week_change:+.1f}pp" if four_week_change is not None else "—"
+                qtd_str = f"{qtd_change:+.1f}pp" if qtd_change is not None else "—"
 
                 return current_str, wow_str, four_week_str, qtd_str
 
