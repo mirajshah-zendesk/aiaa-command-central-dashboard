@@ -663,16 +663,15 @@ else:
     gdf = st.session_state.global_data.copy()
     gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
 
-    # Apply filters
-    # Apply date filter based on mode
+    # Store date filter info before applying filters
+    display_selected_date = None
+    display_date_range = None
     if 'selected_date' in locals() and selected_date is not None:
-        # Specific date or latest snapshot mode
-        gdf = gdf[gdf['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(selected_date)]
+        display_selected_date = selected_date
     elif 'date_range' in locals() and date_range is not None and len(date_range) == 2:
-        # Date range mode
-        gdf = gdf[(gdf['SOURCE_SNAPSHOT_DATE'] >= pd.to_datetime(date_range[0])) &
-                  (gdf['SOURCE_SNAPSHOT_DATE'] <= pd.to_datetime(date_range[1]))]
+        display_date_range = date_range
 
+    # Apply NON-DATE filters first (keep all dates for comparison calculations)
     if 'selected_region' in locals() and selected_region != 'All':
         gdf = gdf[gdf['CRM_REGION'] == selected_region]
 
@@ -712,7 +711,7 @@ else:
 
         gdf = gdf[product_filter]
 
-    # Calculate scorecard metrics
+    # Calculate scorecard metrics for ALL dates (needed for comparisons)
     with st.spinner("Calculating scorecard metrics..."):
         try:
             scorecard_df = calculate_scorecard_metrics(gdf)
@@ -720,6 +719,16 @@ else:
             st.error(f"Error calculating metrics: {e}")
             st.exception(e)
             st.stop()
+
+    # Now apply date filter to the RAW data for tabs that need it (Data Explorer, Adoption Loss)
+    gdf_filtered = gdf.copy()
+    if display_selected_date is not None:
+        # Specific date or latest snapshot mode
+        gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
+    elif display_date_range is not None:
+        # Date range mode
+        gdf_filtered = gdf_filtered[(gdf_filtered['SOURCE_SNAPSHOT_DATE'] >= pd.to_datetime(display_date_range[0])) &
+                                    (gdf_filtered['SOURCE_SNAPSHOT_DATE'] <= pd.to_datetime(display_date_range[1]))]
 
     # Create tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -737,11 +746,24 @@ else:
         if len(scorecard_df) == 0:
             st.warning("No data available for the selected filters.")
         else:
-            # Get latest metrics and calculate changes
-            latest = scorecard_df.iloc[-1]
+            # Determine which date to display based on filter mode
+            if display_selected_date is not None:
+                # Show only the selected date
+                scorecard_display_df = scorecard_df[scorecard_df['Date'] == pd.to_datetime(display_selected_date)]
+                if len(scorecard_display_df) == 0:
+                    st.warning(f"No data available for {display_selected_date}")
+                    st.stop()
+                latest = scorecard_display_df.iloc[-1]
+            else:
+                # Show latest from the range (or all dates)
+                latest = scorecard_df.iloc[-1]
+
             latest_date = latest['Date'].strftime('%Y-%m-%d') if isinstance(latest['Date'], pd.Timestamp) else str(latest['Date'])
 
-            st.markdown(f"**Latest Snapshot:** {latest_date} | **Total Snapshots:** {len(scorecard_df)}")
+            if display_selected_date is not None:
+                st.markdown(f"**Showing data as of:** {latest_date}")
+            else:
+                st.markdown(f"**Latest Snapshot:** {latest_date} | **Total Snapshots:** {len(scorecard_df)}")
 
             # Helper function to calculate changes using exact date matching
             def calculate_changes(metric_name, format_type='number'):
@@ -886,26 +908,34 @@ else:
 
             st.divider()
 
-            # Time series table
-            st.markdown("### 📅 Time Series Data")
+            # Time series table (only show if not in single-date mode)
+            if display_selected_date is None or len(scorecard_df) > 1:
+                st.markdown("### 📅 Time Series Data")
 
-            display_cols = [
-                'Date', '# customers', '# instances',
-                'Adopted customers', 'Adopted instances',
-                'Customer adoption %', 'Instance adoption %',
-                'Median AR Rate', 'Bot deployed share %',
-                'Total ARs (28d)', 'Top Box BSAT %'
-            ]
+                display_cols = [
+                    'Date', '# customers', '# instances',
+                    'Adopted customers', 'Adopted instances',
+                    'Customer adoption %', 'Instance adoption %',
+                    'Median AR Rate', 'Bot deployed share %',
+                    'Total ARs (28d)', 'Top Box BSAT %'
+                ]
 
-            display_df = scorecard_df[display_cols].copy()
-            display_df['Date'] = pd.to_datetime(display_df['Date']).dt.strftime('%Y-%m-%d')
+                # Use the full scorecard_df for time series (or filtered if date range selected)
+                if display_date_range is not None:
+                    time_series_df = scorecard_df[(scorecard_df['Date'] >= pd.to_datetime(display_date_range[0])) &
+                                                   (scorecard_df['Date'] <= pd.to_datetime(display_date_range[1]))]
+                else:
+                    time_series_df = scorecard_df
 
-            # Format percentages
-            for col in ['Customer adoption %', 'Instance adoption %', 'Median AR Rate', 'Bot deployed share %', 'Top Box BSAT %']:
-                if col in display_df.columns:
-                    display_df[col] = display_df[col].apply(lambda x: f"{x:.1f}%")
+                display_df = time_series_df[display_cols].copy()
+                display_df['Date'] = pd.to_datetime(display_df['Date']).dt.strftime('%Y-%m-%d')
 
-            st.dataframe(display_df, use_container_width=True, height=400)
+                # Format percentages
+                for col in ['Customer adoption %', 'Instance adoption %', 'Median AR Rate', 'Bot deployed share %', 'Top Box BSAT %']:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].apply(lambda x: f"{x:.1f}%")
+
+                st.dataframe(display_df, use_container_width=True, height=400)
 
             # Download
             st.download_button(
@@ -926,7 +956,7 @@ else:
     with tab3:
         st.subheader("Cohort Analysis")
 
-        # Calculate cohort metrics
+        # Calculate cohort metrics (use full date range for calculations)
         with st.spinner("Calculating cohort metrics..."):
             try:
                 cohort_df = calculate_cohort_metrics(gdf)
@@ -1318,14 +1348,14 @@ else:
     with tab5:
         st.subheader("Data Explorer")
 
-        all_columns = gdf.columns.tolist()
+        all_columns = gdf_filtered.columns.tolist()
         default_cols = ['SOURCE_SNAPSHOT_DATE', 'INSTANCE_ACCOUNT_SUBDOMAIN', 'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'AR_RATE_PAID']
         default_cols = [col for col in default_cols if col in all_columns]
 
         selected_columns = st.multiselect("Select columns", all_columns, default=default_cols if default_cols else all_columns[:10])
 
         if selected_columns:
-            st.dataframe(gdf[selected_columns].head(1000), use_container_width=True, height=500)
+            st.dataframe(gdf_filtered[selected_columns].head(1000), use_container_width=True, height=500)
 
     with tab6:
         st.subheader("Metrics Guide")
