@@ -873,29 +873,6 @@ else:
 
             st.divider()
 
-            # Time series table (only show if not in single-date mode)
-            if display_selected_date is None or len(scorecard_df) > 1:
-                st.markdown("### 📅 Time Series Data")
-
-                display_cols = [
-                    'Date', '# customers', '# instances',
-                    'Adopted customers', 'Adopted instances',
-                    'Customer adoption %', 'Instance adoption %',
-                    'Median AR Rate', 'Bot deployed share %',
-                    'Total ARs (28d)', 'Top Box BSAT %'
-                ]
-
-                # Use the full scorecard_df for time series
-                display_df = scorecard_df[display_cols].copy()
-                display_df['Date'] = pd.to_datetime(display_df['Date']).dt.strftime('%Y-%m-%d')
-
-                # Format percentages
-                for col in ['Customer adoption %', 'Instance adoption %', 'Median AR Rate', 'Bot deployed share %', 'Top Box BSAT %']:
-                    if col in display_df.columns:
-                        display_df[col] = display_df[col].apply(lambda x: f"{x:.1f}%")
-
-                st.dataframe(display_df, use_container_width=True, height=400)
-
             # Download
             st.download_button(
                 label=":material/download: Download Full Scorecard (CSV)",
