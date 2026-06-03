@@ -204,7 +204,8 @@ def calculate_scorecard_metrics(df):
         'TOP_BOX_5_STAR_28D', 'TOTAL_RESPONSES_28D', 'TENURE_MONTHS',
         'AUTOMATED_RESOLUTIONS_NET_ARR_USD', 'ALLOWANCE_PERIOD_MONTHS',
         'DAYS_INTO_ALLOWANCE_CYCLE', 'TOTAL_ALLOWANCE',
-        'PRORATED_ALLOWANCE_LAST_28D', 'AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED'
+        'PRORATED_ALLOWANCE_LAST_28D', 'AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED',
+        'VERIFIED_RESOLUTIONS_PAID', 'CONTAINED_RESOLUTIONS_PAID'
     ]
 
     for col in numeric_columns:
@@ -368,6 +369,18 @@ def calculate_scorecard_metrics(df):
 
         # Automated Resolutions
         metrics['Total ARs (28d)'] = snapshot['AUTOMATED_RESOLUTIONS_PAID'].sum()
+
+        # Verified Resolutions
+        if 'VERIFIED_RESOLUTIONS_PAID' in snapshot.columns:
+            metrics['Total Verified Resolutions (28d)'] = snapshot['VERIFIED_RESOLUTIONS_PAID'].sum()
+        else:
+            metrics['Total Verified Resolutions (28d)'] = 0
+
+        # Contained Resolutions
+        if 'CONTAINED_RESOLUTIONS_PAID' in snapshot.columns:
+            metrics['Total Contained Resolutions (28d)'] = snapshot['CONTAINED_RESOLUTIONS_PAID'].sum()
+        else:
+            metrics['Total Contained Resolutions (28d)'] = 0
 
         # Bot interactions
         metrics['Total Bot Interactions (28d)'] = snapshot['BOT_INTERACTIONS_PAID'].sum()
@@ -820,6 +833,8 @@ else:
                     ("Instances AR 0-30%", "Instances AR 0-30%", "number"),
                     ("Instances AR 30%+", "Instances AR 30%+", "number"),
                     ("Total ARs (28d)", "Total ARs (28d)", "number"),
+                    ("Total Verified Resolutions (28d)", "Total Verified Resolutions (28d)", "number"),
+                    ("Total Contained Resolutions (28d)", "Total Contained Resolutions (28d)", "number"),
                 ],
                 "🚀 Bot Deployment": [
                     ("Total Active Instances with Bot", "Total active instances with bot deployed", "number"),
