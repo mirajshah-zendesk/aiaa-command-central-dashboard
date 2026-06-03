@@ -506,21 +506,52 @@ with st.sidebar:
         gdf = st.session_state.global_data.copy()
         gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
 
-        # Date filter
+        # Date filter - "As of Date" selector
         if 'SOURCE_SNAPSHOT_DATE' in gdf.columns and not gdf['SOURCE_SNAPSHOT_DATE'].isna().all():
             try:
-                min_date = gdf['SOURCE_SNAPSHOT_DATE'].min().date()
-                max_date = gdf['SOURCE_SNAPSHOT_DATE'].max().date()
+                # Get available snapshot dates
+                available_dates = sorted(gdf['SOURCE_SNAPSHOT_DATE'].dt.date.unique(), reverse=True)
 
-                date_range = st.date_input(
-                    "Date Range",
-                    value=(min_date, max_date),
-                    min_value=min_date,
-                    max_value=max_date
+                # Date filter mode selector
+                date_mode = st.radio(
+                    "Date Filter Mode",
+                    options=["Latest Snapshot", "Specific Date", "Date Range"],
+                    horizontal=True,
+                    key="date_mode"
                 )
+
+                if date_mode == "Latest Snapshot":
+                    # Use only the latest snapshot date
+                    selected_date = available_dates[0]
+                    date_range = None
+                    st.info(f"📅 Showing data as of: **{selected_date}**")
+
+                elif date_mode == "Specific Date":
+                    # Allow selection of a specific snapshot date
+                    selected_date = st.selectbox(
+                        "As of Date",
+                        options=available_dates,
+                        key="as_of_date"
+                    )
+                    date_range = None
+
+                else:  # Date Range
+                    # Original date range picker
+                    min_date = gdf['SOURCE_SNAPSHOT_DATE'].min().date()
+                    max_date = gdf['SOURCE_SNAPSHOT_DATE'].max().date()
+
+                    date_range = st.date_input(
+                        "Date Range",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date
+                    )
+                    selected_date = None
+
             except Exception as e:
                 st.error(f"Error with date filter: {e}")
                 date_range = None
+                selected_date = None
 
         # Region filter
         if 'CRM_REGION' in gdf.columns:
@@ -633,7 +664,12 @@ else:
     gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
 
     # Apply filters
-    if 'date_range' in locals() and len(date_range) == 2:
+    # Apply date filter based on mode
+    if 'selected_date' in locals() and selected_date is not None:
+        # Specific date or latest snapshot mode
+        gdf = gdf[gdf['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(selected_date)]
+    elif 'date_range' in locals() and date_range is not None and len(date_range) == 2:
+        # Date range mode
         gdf = gdf[(gdf['SOURCE_SNAPSHOT_DATE'] >= pd.to_datetime(date_range[0])) &
                   (gdf['SOURCE_SNAPSHOT_DATE'] <= pd.to_datetime(date_range[1]))]
 
