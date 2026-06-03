@@ -484,8 +484,8 @@ def calculate_scorecard_metrics(df):
 
 def calculate_cohort_metrics(df):
     """
-    Calculate customer counts by cohort for each snapshot date
-    Returns a dataframe with Date, Cohort, and # Customers
+    Calculate customer and instance counts by cohort for each snapshot date.
+    Returns a dataframe with Date, Cohort, # Customers (distinct CRMs), and # Instances (rows).
     """
     # Ensure date column is datetime
     df['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(df['SOURCE_SNAPSHOT_DATE'])
@@ -509,9 +509,13 @@ def calculate_cohort_metrics(df):
         if 'COHORT' not in snapshot_penetrated.columns:
             continue
 
-        # Group by cohort and count unique CRM accounts
-        cohort_counts = snapshot_penetrated.groupby('COHORT')['CRM_ACCOUNT_ID'].nunique().reset_index()
-        cohort_counts.columns = ['Cohort', '# Customers']
+        cohort_counts = snapshot_penetrated.groupby('COHORT').agg(
+            **{
+                '# Customers': ('CRM_ACCOUNT_ID', 'nunique'),
+                '# Instances': ('COHORT', 'size'),
+            }
+        ).reset_index()
+        cohort_counts.columns = ['Cohort', '# Customers', '# Instances']
         cohort_counts['Date'] = date
 
         # Exclude "not penetrated" cohort
@@ -520,11 +524,11 @@ def calculate_cohort_metrics(df):
         cohort_metrics_list.append(cohort_counts)
 
     if len(cohort_metrics_list) == 0:
-        return pd.DataFrame(columns=['Date', 'Cohort', '# Customers'])
+        return pd.DataFrame(columns=['Date', 'Cohort', '# Customers', '# Instances'])
 
     # Combine all snapshots
     cohort_df = pd.concat(cohort_metrics_list, ignore_index=True)
-    cohort_df = cohort_df[['Date', 'Cohort', '# Customers']]
+    cohort_df = cohort_df[['Date', 'Cohort', '# Customers', '# Instances']]
 
     return cohort_df
 
@@ -952,7 +956,7 @@ else:
             st.markdown(f"**Latest Snapshot:** {latest_date.strftime('%Y-%m-%d') if isinstance(latest_date, pd.Timestamp) else str(latest_date)}")
 
             # Helper function to calculate cohort changes as percentage points
-            def calculate_cohort_changes(cohort_name):
+            def calculate_cohort_changes(cohort_name, value_col='# Customers'):
                 cohort_data = cohort_df[cohort_df['Cohort'] == cohort_name].copy()
                 cohort_data['Date'] = pd.to_datetime(cohort_data['Date'])
                 cohort_data = cohort_data.sort_values('Date')
@@ -965,10 +969,10 @@ else:
                 if len(current_row) == 0:
                     return None, None, None, None
 
-                current = current_row.iloc[0]['# Customers']
+                current = current_row.iloc[0][value_col]
 
                 # Calculate current % of total
-                total_current = cohort_df[cohort_df['Date'] == latest_date]['# Customers'].sum()
+                total_current = cohort_df[cohort_df['Date'] == latest_date][value_col].sum()
                 current_pct = (current / total_current * 100) if total_current > 0 else 0
 
                 # WoW change (exact match for 7 days ago) - as percentage points
@@ -976,8 +980,8 @@ else:
                 one_week_ago = latest_date - pd.Timedelta(days=7)
                 prev_week_data = cohort_data[cohort_data['Date'] == one_week_ago]
                 if len(prev_week_data) > 0:
-                    prev_week = prev_week_data.iloc[0]['# Customers']
-                    total_prev_week = cohort_df[cohort_df['Date'] == one_week_ago]['# Customers'].sum()
+                    prev_week = prev_week_data.iloc[0][value_col]
+                    total_prev_week = cohort_df[cohort_df['Date'] == one_week_ago][value_col].sum()
                     if not pd.isna(prev_week) and total_prev_week > 0:
                         prev_week_pct = (prev_week / total_prev_week * 100)
                         wow_change = current_pct - prev_week_pct
@@ -987,8 +991,8 @@ else:
                 four_weeks_ago = latest_date - pd.Timedelta(days=28)
                 four_week_data = cohort_data[cohort_data['Date'] == four_weeks_ago]
                 if len(four_week_data) > 0:
-                    four_week_val = four_week_data.iloc[0]['# Customers']
-                    total_four_weeks = cohort_df[cohort_df['Date'] == four_weeks_ago]['# Customers'].sum()
+                    four_week_val = four_week_data.iloc[0][value_col]
+                    total_four_weeks = cohort_df[cohort_df['Date'] == four_weeks_ago][value_col].sum()
                     if not pd.isna(four_week_val) and total_four_weeks > 0:
                         four_week_pct = (four_week_val / total_four_weeks * 100)
                         four_week_change = current_pct - four_week_pct
@@ -998,9 +1002,9 @@ else:
                 quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
                 qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
                 if len(qtd_data) >= 2:
-                    qtd_first = qtd_data.iloc[0]['# Customers']
+                    qtd_first = qtd_data.iloc[0][value_col]
                     qtd_first_date = qtd_data.iloc[0]['Date']
-                    total_qtd_first = cohort_df[cohort_df['Date'] == qtd_first_date]['# Customers'].sum()
+                    total_qtd_first = cohort_df[cohort_df['Date'] == qtd_first_date][value_col].sum()
                     if not pd.isna(qtd_first) and total_qtd_first > 0:
                         qtd_first_pct = (qtd_first / total_qtd_first * 100)
                         qtd_change = current_pct - qtd_first_pct
@@ -1014,34 +1018,44 @@ else:
                 return current_str, wow_str, four_week_str, qtd_str
 
             # Build cohort table
-            st.markdown("### 📊 Customer Counts by Cohort")
+            st.markdown("### 📊 Customer & Instance Counts by Cohort")
+            st.caption("**# Customers** = distinct CRM accounts in the cohort. **# Instances** = rows in the mart (matches `SELECT COUNT(*) FROM ai_agents_advanced_command_central`).")
 
             table_data = []
             # First pass: collect raw numbers for percentage calculation
-            cohort_raw_data = {}
+            cohort_raw_customers = {}
+            cohort_raw_instances = {}
             for cohort in sorted(latest_cohorts['Cohort'].unique()):
                 cohort_data = latest_cohorts[latest_cohorts['Cohort'] == cohort]
                 if len(cohort_data) > 0:
-                    cohort_raw_data[cohort] = cohort_data.iloc[0]['# Customers']
+                    cohort_raw_customers[cohort] = cohort_data.iloc[0]['# Customers']
+                    cohort_raw_instances[cohort] = cohort_data.iloc[0]['# Instances']
 
-            # Calculate total customers
-            total_customers = sum(cohort_raw_data.values())
+            total_customers = sum(cohort_raw_customers.values())
+            total_instances = sum(cohort_raw_instances.values())
 
             # Second pass: build table with percentages
             for cohort in sorted(latest_cohorts['Cohort'].unique()):
-                current, wow, four_week, qtd = calculate_cohort_changes(cohort)
-                if current is not None:
-                    # Calculate percentage
-                    raw_count = cohort_raw_data.get(cohort, 0)
-                    pct_of_total = (raw_count / total_customers * 100) if total_customers > 0 else 0
+                cust_current, cust_wow, cust_four_week, cust_qtd = calculate_cohort_changes(cohort, '# Customers')
+                inst_current, inst_wow, inst_four_week, inst_qtd = calculate_cohort_changes(cohort, '# Instances')
+                if cust_current is not None:
+                    raw_cust = cohort_raw_customers.get(cohort, 0)
+                    raw_inst = cohort_raw_instances.get(cohort, 0)
+                    cust_pct = (raw_cust / total_customers * 100) if total_customers > 0 else 0
+                    inst_pct = (raw_inst / total_instances * 100) if total_instances > 0 else 0
 
                     table_data.append({
                         "Cohort": cohort,
-                        "Current # Customers": current,
-                        "% of Total": f"{pct_of_total:.1f}%",
-                        "WoW Change": wow,
-                        "4-Week Change": four_week,
-                        "QTD Change": qtd
+                        "# Customers": cust_current,
+                        "Customer % of Total": f"{cust_pct:.1f}%",
+                        "Customer WoW": cust_wow,
+                        "Customer 4-Week": cust_four_week,
+                        "Customer QTD": cust_qtd,
+                        "# Instances": inst_current,
+                        "Instance % of Total": f"{inst_pct:.1f}%",
+                        "Instance WoW": inst_wow,
+                        "Instance 4-Week": inst_four_week,
+                        "Instance QTD": inst_qtd,
                     })
 
             if len(table_data) > 0:
@@ -1056,8 +1070,14 @@ else:
             # Time series table
             st.markdown("### 📅 Cohort Trends Over Time")
 
-            # Pivot the data for better visualization
-            cohort_pivot = cohort_df.pivot(index='Date', columns='Cohort', values='# Customers')
+            metric_choice = st.radio(
+                "Metric",
+                options=['# Customers', '# Instances'],
+                horizontal=True,
+                key='cohort_trend_metric',
+            )
+
+            cohort_pivot = cohort_df.pivot(index='Date', columns='Cohort', values=metric_choice)
             cohort_pivot = cohort_pivot.sort_index(ascending=False)
             cohort_pivot.index = pd.to_datetime(cohort_pivot.index).strftime('%Y-%m-%d')
 
