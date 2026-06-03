@@ -725,13 +725,6 @@ else:
                 # Show latest from the range (or all dates)
                 latest = scorecard_df.iloc[-1]
 
-            latest_date = latest['Date'].strftime('%Y-%m-%d') if isinstance(latest['Date'], pd.Timestamp) else str(latest['Date'])
-
-            if display_selected_date is not None:
-                st.markdown(f"**Showing data as of:** {latest_date}")
-            else:
-                st.markdown(f"**Latest Snapshot:** {latest_date} | **Total Snapshots:** {len(scorecard_df)}")
-
             # Helper function to calculate changes using exact date matching
             def calculate_changes(metric_name, format_type='number'):
                 current = latest[metric_name]
