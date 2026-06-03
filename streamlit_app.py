@@ -506,51 +506,23 @@ with st.sidebar:
         gdf = st.session_state.global_data.copy()
         gdf['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf['SOURCE_SNAPSHOT_DATE'])
 
-        # Date filter - "As of Date" selector
+        # Date filter - Simple date selector defaulting to latest snapshot
         if 'SOURCE_SNAPSHOT_DATE' in gdf.columns and not gdf['SOURCE_SNAPSHOT_DATE'].isna().all():
             try:
-                # Get available snapshot dates
+                # Get available snapshot dates (sorted newest to oldest)
                 available_dates = sorted(gdf['SOURCE_SNAPSHOT_DATE'].dt.date.unique(), reverse=True)
 
-                # Date filter mode selector
-                date_mode = st.radio(
-                    "Date Filter Mode",
-                    options=["Latest Snapshot", "Specific Date", "Date Range"],
-                    horizontal=True,
-                    key="date_mode"
+                # Simple date selector with latest as default (index 0)
+                selected_date = st.selectbox(
+                    "As of Date",
+                    options=available_dates,
+                    index=0,  # Default to latest (first in list)
+                    key="as_of_date",
+                    help="Select a snapshot date to view metrics. Defaults to the latest available date."
                 )
-
-                if date_mode == "Latest Snapshot":
-                    # Use only the latest snapshot date
-                    selected_date = available_dates[0]
-                    date_range = None
-                    st.info(f"📅 Showing data as of: **{selected_date}**")
-
-                elif date_mode == "Specific Date":
-                    # Allow selection of a specific snapshot date
-                    selected_date = st.selectbox(
-                        "As of Date",
-                        options=available_dates,
-                        key="as_of_date"
-                    )
-                    date_range = None
-
-                else:  # Date Range
-                    # Original date range picker
-                    min_date = gdf['SOURCE_SNAPSHOT_DATE'].min().date()
-                    max_date = gdf['SOURCE_SNAPSHOT_DATE'].max().date()
-
-                    date_range = st.date_input(
-                        "Date Range",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date
-                    )
-                    selected_date = None
 
             except Exception as e:
                 st.error(f"Error with date filter: {e}")
-                date_range = None
                 selected_date = None
 
         # Region filter
@@ -665,11 +637,8 @@ else:
 
     # Store date filter info before applying filters
     display_selected_date = None
-    display_date_range = None
     if 'selected_date' in locals() and selected_date is not None:
         display_selected_date = selected_date
-    elif 'date_range' in locals() and date_range is not None and len(date_range) == 2:
-        display_date_range = date_range
 
     # Apply NON-DATE filters first (keep all dates for comparison calculations)
     if 'selected_region' in locals() and selected_region != 'All':
@@ -720,15 +689,11 @@ else:
             st.exception(e)
             st.stop()
 
-    # Now apply date filter to the RAW data for tabs that need it (Data Explorer, Adoption Loss)
+    # Now apply date filter to the RAW data for tabs that need it (Data Explorer)
     gdf_filtered = gdf.copy()
     if display_selected_date is not None:
-        # Specific date or latest snapshot mode
+        # Filter to the selected date
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
-    elif display_date_range is not None:
-        # Date range mode
-        gdf_filtered = gdf_filtered[(gdf_filtered['SOURCE_SNAPSHOT_DATE'] >= pd.to_datetime(display_date_range[0])) &
-                                    (gdf_filtered['SOURCE_SNAPSHOT_DATE'] <= pd.to_datetime(display_date_range[1]))]
 
     # Create tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -920,14 +885,8 @@ else:
                     'Total ARs (28d)', 'Top Box BSAT %'
                 ]
 
-                # Use the full scorecard_df for time series (or filtered if date range selected)
-                if display_date_range is not None:
-                    time_series_df = scorecard_df[(scorecard_df['Date'] >= pd.to_datetime(display_date_range[0])) &
-                                                   (scorecard_df['Date'] <= pd.to_datetime(display_date_range[1]))]
-                else:
-                    time_series_df = scorecard_df
-
-                display_df = time_series_df[display_cols].copy()
+                # Use the full scorecard_df for time series
+                display_df = scorecard_df[display_cols].copy()
                 display_df['Date'] = pd.to_datetime(display_df['Date']).dt.strftime('%Y-%m-%d')
 
                 # Format percentages
