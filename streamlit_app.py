@@ -483,24 +483,6 @@ def calculate_cohort_metrics(df):
 
 # Sidebar for file upload
 with st.sidebar:
-    st.header(":material/database: Data Source")
-
-    st.markdown("### Snowflake Connection")
-    st.info("Connected to: `presentation.success.ai_agents_advanced_command_central`")
-
-    # Load data button
-    if st.button("🔄 Load Data from Snowflake", use_container_width=True):
-        with st.spinner("Loading data from Snowflake..."):
-            df, error = load_data_from_snowflake()
-
-            if error:
-                st.error(f"Error loading data: {error}")
-            elif df is not None:
-                st.session_state.global_data = df
-                st.session_state.last_load_time = datetime.now()
-                st.success("✓ Data loaded successfully!")
-                st.rerun()
-
     # Auto-load on first visit
     if st.session_state.global_data is None:
         with st.spinner("Loading data from Snowflake..."):
@@ -514,23 +496,6 @@ with st.sidebar:
             elif df is not None:
                 st.session_state.global_data = df
                 st.session_state.last_load_time = datetime.now()
-
-    # Show data stats if loaded
-    if st.session_state.global_data is not None:
-        df = st.session_state.global_data
-        st.success("✓ Data Loaded")
-
-        if st.session_state.last_load_time:
-            st.caption(f"Last loaded: {st.session_state.last_load_time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-        st.metric("Total Rows", f"{len(df):,}")
-
-        if 'SOURCE_SNAPSHOT_DATE' in df.columns:
-            df['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(df['SOURCE_SNAPSHOT_DATE'])
-            st.metric("Date Range", f"{df['SOURCE_SNAPSHOT_DATE'].min().strftime('%Y-%m-%d')} to {df['SOURCE_SNAPSHOT_DATE'].max().strftime('%Y-%m-%d')}")
-
-        if 'INSTANCE_ACCOUNT_SUBDOMAIN' in df.columns:
-            st.metric("Unique Instances", df['INSTANCE_ACCOUNT_SUBDOMAIN'].nunique())
 
     if st.session_state.global_data is not None and len(st.session_state.global_data) > 0:
         st.divider()
