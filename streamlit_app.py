@@ -577,8 +577,8 @@ with st.sidebar:
         st.markdown("**AI Agents Product**")
         ai_product_options = st.multiselect(
             "Select product type(s)",
-            options=['AI Agents Advanced', 'AI Agents Essentials'],
-            default=['AI Agents Advanced', 'AI Agents Essentials'],
+            options=['Advanced', 'Essentials'],
+            default=['Advanced', 'Essentials'],
             label_visibility="collapsed",
             help="**Advanced**: INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED = TRUE (includes instances with both Advanced and Essentials)\n\n**Essentials**: Instances with PAID penetrated but NOT Advanced penetrated (Essentials-only instances)",
             key="product_filter"
@@ -666,11 +666,11 @@ else:
         # - Essentials: Advanced = FALSE AND INSTANCE_IS_AI_AGENTS_PAID_PENETRATED = TRUE
         product_filter = pd.Series([False] * len(gdf), index=gdf.index)
 
-        if 'AI Agents Advanced' in ai_product_options:
+        if 'Advanced' in ai_product_options:
             # Advanced takes precedence
             product_filter |= (gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)
 
-        if 'AI Agents Essentials' in ai_product_options:
+        if 'Essentials' in ai_product_options:
             # Essentials only if Advanced is False
             essentials_filter = (
                 (gdf['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False) &
