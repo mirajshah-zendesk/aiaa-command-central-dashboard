@@ -846,6 +846,8 @@ else:
                     ("Total Active Instances with Bot", "Total active instances with bot deployed", "number"),
                     ("Bots Deployed This Week", "Bots deployed this week", "number"),
                     ("Bot Deployed Share %", "Bot deployed share %", "percent"),
+                    ("Bot Interactions (28d)", "Bot deployed share - numerator", "number"),
+                    ("Total Tickets (28d)", "Bot deployed share - denominator", "number"),
                     ("Gen3 Instances", "Gen3 Instances", "number"),
                     ("Actual Go-Live (Past Week)", "Actual Go-Live (past week)", "number"),
                     ("Projected Go-Live (Next Week)", "Projected Go-Live (next week)", "number"),
