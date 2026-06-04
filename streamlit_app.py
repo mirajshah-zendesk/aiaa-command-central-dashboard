@@ -1380,10 +1380,26 @@ else:
         default_cols = ['SOURCE_SNAPSHOT_DATE', 'INSTANCE_ACCOUNT_SUBDOMAIN', 'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'AR_RATE_PAID']
         default_cols = [col for col in default_cols if col in all_columns]
 
+        search_fields = [c for c in ('CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN') if c in all_columns]
+        search_term = st.text_input(
+            "Search account",
+            placeholder="Enter CRM account ID/name, instance account ID, or subdomain (partial matches OK)",
+            key="data_explorer_search",
+        )
+
+        explorer_df = gdf_filtered
+        if search_term and search_fields:
+            term_lower = search_term.strip().lower()
+            mask = pd.Series(False, index=explorer_df.index)
+            for field in search_fields:
+                mask = mask | explorer_df[field].astype(str).str.lower().str.contains(term_lower, na=False)
+            explorer_df = explorer_df[mask]
+            st.caption(f"Matched {len(explorer_df):,} rows across {', '.join(search_fields)}.")
+
         selected_columns = st.multiselect("Select columns", all_columns, default=default_cols if default_cols else all_columns[:10])
 
         if selected_columns:
-            st.dataframe(gdf_filtered[selected_columns].head(1000), use_container_width=True, height=500)
+            st.dataframe(explorer_df[selected_columns].head(1000), use_container_width=True, height=500)
 
     with tab6:
         st.subheader("Metrics Guide")
