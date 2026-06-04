@@ -941,147 +941,154 @@ else:
         if len(cohort_df) == 0:
             st.warning("No cohort data available. Please ensure the 'COHORT' column exists in your data.")
         else:
-            # Get latest date
-            latest_date = cohort_df['Date'].max()
+            # Use the selected date if available, otherwise get latest date
+            if display_selected_date is not None:
+                latest_date = pd.to_datetime(display_selected_date)
+            else:
+                latest_date = cohort_df['Date'].max()
+
             latest_cohorts = cohort_df[cohort_df['Date'] == latest_date].copy()
 
-            st.markdown(f"**Latest Snapshot:** {latest_date.strftime('%Y-%m-%d') if isinstance(latest_date, pd.Timestamp) else str(latest_date)}")
-
-            # Helper function to calculate cohort changes as percentage points
-            def calculate_cohort_changes(cohort_name, value_col='# Customers'):
-                cohort_data = cohort_df[cohort_df['Cohort'] == cohort_name].copy()
-                cohort_data['Date'] = pd.to_datetime(cohort_data['Date'])
-                cohort_data = cohort_data.sort_values('Date')
-
-                if len(cohort_data) == 0:
-                    return None, None, None, None
-
-                # Get current value
-                current_row = cohort_data[cohort_data['Date'] == latest_date]
-                if len(current_row) == 0:
-                    return None, None, None, None
-
-                current = current_row.iloc[0][value_col]
-
-                # Calculate current % of total
-                total_current = cohort_df[cohort_df['Date'] == latest_date][value_col].sum()
-                current_pct = (current / total_current * 100) if total_current > 0 else 0
-
-                # WoW change (exact match for 7 days ago) - as percentage points
-                wow_change = None
-                one_week_ago = latest_date - pd.Timedelta(days=7)
-                prev_week_data = cohort_data[cohort_data['Date'] == one_week_ago]
-                if len(prev_week_data) > 0:
-                    prev_week = prev_week_data.iloc[0][value_col]
-                    total_prev_week = cohort_df[cohort_df['Date'] == one_week_ago][value_col].sum()
-                    if not pd.isna(prev_week) and total_prev_week > 0:
-                        prev_week_pct = (prev_week / total_prev_week * 100)
-                        wow_change = current_pct - prev_week_pct
-
-                # 4-week change (exact match for 28 days ago) - as percentage points
-                four_week_change = None
-                four_weeks_ago = latest_date - pd.Timedelta(days=28)
-                four_week_data = cohort_data[cohort_data['Date'] == four_weeks_ago]
-                if len(four_week_data) > 0:
-                    four_week_val = four_week_data.iloc[0][value_col]
-                    total_four_weeks = cohort_df[cohort_df['Date'] == four_weeks_ago][value_col].sum()
-                    if not pd.isna(four_week_val) and total_four_weeks > 0:
-                        four_week_pct = (four_week_val / total_four_weeks * 100)
-                        four_week_change = current_pct - four_week_pct
-
-                # QTD change (quarter-to-date) - as percentage points
-                qtd_change = None
-                quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
-                qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
-                if len(qtd_data) >= 2:
-                    qtd_first = qtd_data.iloc[0][value_col]
-                    qtd_first_date = qtd_data.iloc[0]['Date']
-                    total_qtd_first = cohort_df[cohort_df['Date'] == qtd_first_date][value_col].sum()
-                    if not pd.isna(qtd_first) and total_qtd_first > 0:
-                        qtd_first_pct = (qtd_first / total_qtd_first * 100)
-                        qtd_change = current_pct - qtd_first_pct
-
-                # Format values
-                current_str = f"{int(current):,}"
-                wow_str = f"{wow_change:+.1f}pp" if wow_change is not None else "—"
-                four_week_str = f"{four_week_change:+.1f}pp" if four_week_change is not None else "—"
-                qtd_str = f"{qtd_change:+.1f}pp" if qtd_change is not None else "—"
-
-                return current_str, wow_str, four_week_str, qtd_str
-
-            # Build cohort table
-            st.markdown("### 📊 Customer & Instance Counts by Cohort")
-            st.caption("**# Customers** = distinct CRM accounts in the cohort. **# Instances** = distinct instance subdomains in the cohort.")
-
-            table_data = []
-            # First pass: collect raw numbers for percentage calculation
-            cohort_raw_customers = {}
-            cohort_raw_instances = {}
-            for cohort in sorted(latest_cohorts['Cohort'].unique()):
-                cohort_data = latest_cohorts[latest_cohorts['Cohort'] == cohort]
-                if len(cohort_data) > 0:
-                    cohort_raw_customers[cohort] = cohort_data.iloc[0]['# Customers']
-                    cohort_raw_instances[cohort] = cohort_data.iloc[0]['# Instances']
-
-            total_customers = sum(cohort_raw_customers.values())
-            total_instances = sum(cohort_raw_instances.values())
-
-            # Second pass: build table with percentages
-            for cohort in sorted(latest_cohorts['Cohort'].unique()):
-                cust_current, cust_wow, cust_four_week, cust_qtd = calculate_cohort_changes(cohort, '# Customers')
-                inst_current, inst_wow, inst_four_week, inst_qtd = calculate_cohort_changes(cohort, '# Instances')
-                if cust_current is not None:
-                    raw_cust = cohort_raw_customers.get(cohort, 0)
-                    raw_inst = cohort_raw_instances.get(cohort, 0)
-                    cust_pct = (raw_cust / total_customers * 100) if total_customers > 0 else 0
-                    inst_pct = (raw_inst / total_instances * 100) if total_instances > 0 else 0
-
-                    table_data.append({
-                        "Cohort": cohort,
-                        "# Customers": cust_current,
-                        "Customer % of Total": f"{cust_pct:.1f}%",
-                        "Customer WoW": cust_wow,
-                        "Customer 4-Week": cust_four_week,
-                        "Customer QTD": cust_qtd,
-                        "# Instances": inst_current,
-                        "Instance % of Total": f"{inst_pct:.1f}%",
-                        "Instance WoW": inst_wow,
-                        "Instance 4-Week": inst_four_week,
-                        "Instance QTD": inst_qtd,
-                    })
-
-            if len(table_data) > 0:
-                cohort_table = pd.DataFrame(table_data)
-                cohort_table = cohort_table.set_index('Cohort')
-                st.dataframe(cohort_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 600))
+            if len(latest_cohorts) == 0:
+                st.warning(f"No cohort data available for {latest_date.strftime('%Y-%m-%d')}. Please select a different date.")
             else:
-                st.warning("No cohort data available for the latest snapshot.")
+                st.markdown(f"**Snapshot Date:** {latest_date.strftime('%Y-%m-%d') if isinstance(latest_date, pd.Timestamp) else str(latest_date)}")
 
-            st.divider()
+                # Helper function to calculate cohort changes as percentage points
+                def calculate_cohort_changes(cohort_name, value_col='# Customers'):
+                    cohort_data = cohort_df[cohort_df['Cohort'] == cohort_name].copy()
+                    cohort_data['Date'] = pd.to_datetime(cohort_data['Date'])
+                    cohort_data = cohort_data.sort_values('Date')
 
-            # Time series table
-            st.markdown("### 📅 Cohort Trends Over Time")
+                    if len(cohort_data) == 0:
+                        return None, None, None, None
 
-            metric_choice = st.radio(
-                "Metric",
-                options=['# Customers', '# Instances'],
-                horizontal=True,
-                key='cohort_trend_metric',
-            )
+                    # Get current value
+                    current_row = cohort_data[cohort_data['Date'] == latest_date]
+                    if len(current_row) == 0:
+                        return None, None, None, None
 
-            cohort_pivot = cohort_df.pivot(index='Date', columns='Cohort', values=metric_choice)
-            cohort_pivot = cohort_pivot.sort_index(ascending=False)
-            cohort_pivot.index = pd.to_datetime(cohort_pivot.index).strftime('%Y-%m-%d')
+                    current = current_row.iloc[0][value_col]
 
-            st.dataframe(cohort_pivot, use_container_width=True, height=400)
+                    # Calculate current % of total
+                    total_current = cohort_df[cohort_df['Date'] == latest_date][value_col].sum()
+                    current_pct = (current / total_current * 100) if total_current > 0 else 0
 
-            # Download
-            st.download_button(
-                label=":material/download: Download Cohort Data (CSV)",
-                data=cohort_df.to_csv(index=False).encode('utf-8'),
-                file_name=f"aiaa_cohort_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+                    # WoW change (exact match for 7 days ago) - as percentage points
+                    wow_change = None
+                    one_week_ago = latest_date - pd.Timedelta(days=7)
+                    prev_week_data = cohort_data[cohort_data['Date'] == one_week_ago]
+                    if len(prev_week_data) > 0:
+                        prev_week = prev_week_data.iloc[0][value_col]
+                        total_prev_week = cohort_df[cohort_df['Date'] == one_week_ago][value_col].sum()
+                        if not pd.isna(prev_week) and total_prev_week > 0:
+                            prev_week_pct = (prev_week / total_prev_week * 100)
+                            wow_change = current_pct - prev_week_pct
+
+                    # 4-week change (exact match for 28 days ago) - as percentage points
+                    four_week_change = None
+                    four_weeks_ago = latest_date - pd.Timedelta(days=28)
+                    four_week_data = cohort_data[cohort_data['Date'] == four_weeks_ago]
+                    if len(four_week_data) > 0:
+                        four_week_val = four_week_data.iloc[0][value_col]
+                        total_four_weeks = cohort_df[cohort_df['Date'] == four_weeks_ago][value_col].sum()
+                        if not pd.isna(four_week_val) and total_four_weeks > 0:
+                            four_week_pct = (four_week_val / total_four_weeks * 100)
+                            four_week_change = current_pct - four_week_pct
+
+                    # QTD change (quarter-to-date) - as percentage points
+                    qtd_change = None
+                    quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
+                    qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
+                    if len(qtd_data) >= 2:
+                        qtd_first = qtd_data.iloc[0][value_col]
+                        qtd_first_date = qtd_data.iloc[0]['Date']
+                        total_qtd_first = cohort_df[cohort_df['Date'] == qtd_first_date][value_col].sum()
+                        if not pd.isna(qtd_first) and total_qtd_first > 0:
+                            qtd_first_pct = (qtd_first / total_qtd_first * 100)
+                            qtd_change = current_pct - qtd_first_pct
+
+                    # Format values
+                    current_str = f"{int(current):,}"
+                    wow_str = f"{wow_change:+.1f}pp" if wow_change is not None else "—"
+                    four_week_str = f"{four_week_change:+.1f}pp" if four_week_change is not None else "—"
+                    qtd_str = f"{qtd_change:+.1f}pp" if qtd_change is not None else "—"
+
+                    return current_str, wow_str, four_week_str, qtd_str
+
+                # Build cohort table
+                st.markdown("### 📊 Customer & Instance Counts by Cohort")
+                st.caption("**# Customers** = distinct CRM accounts in the cohort. **# Instances** = distinct instance subdomains in the cohort.")
+
+                table_data = []
+                # First pass: collect raw numbers for percentage calculation
+                cohort_raw_customers = {}
+                cohort_raw_instances = {}
+                for cohort in sorted(latest_cohorts['Cohort'].unique()):
+                    cohort_data = latest_cohorts[latest_cohorts['Cohort'] == cohort]
+                    if len(cohort_data) > 0:
+                        cohort_raw_customers[cohort] = cohort_data.iloc[0]['# Customers']
+                        cohort_raw_instances[cohort] = cohort_data.iloc[0]['# Instances']
+
+                total_customers = sum(cohort_raw_customers.values())
+                total_instances = sum(cohort_raw_instances.values())
+
+                # Second pass: build table with percentages
+                for cohort in sorted(latest_cohorts['Cohort'].unique()):
+                    cust_current, cust_wow, cust_four_week, cust_qtd = calculate_cohort_changes(cohort, '# Customers')
+                    inst_current, inst_wow, inst_four_week, inst_qtd = calculate_cohort_changes(cohort, '# Instances')
+                    if cust_current is not None:
+                        raw_cust = cohort_raw_customers.get(cohort, 0)
+                        raw_inst = cohort_raw_instances.get(cohort, 0)
+                        cust_pct = (raw_cust / total_customers * 100) if total_customers > 0 else 0
+                        inst_pct = (raw_inst / total_instances * 100) if total_instances > 0 else 0
+
+                        table_data.append({
+                            "Cohort": cohort,
+                            "# Customers": cust_current,
+                            "Customer % of Total": f"{cust_pct:.1f}%",
+                            "Customer WoW": cust_wow,
+                            "Customer 4-Week": cust_four_week,
+                            "Customer QTD": cust_qtd,
+                            "# Instances": inst_current,
+                            "Instance % of Total": f"{inst_pct:.1f}%",
+                            "Instance WoW": inst_wow,
+                            "Instance 4-Week": inst_four_week,
+                            "Instance QTD": inst_qtd,
+                        })
+
+                if len(table_data) > 0:
+                    cohort_table = pd.DataFrame(table_data)
+                    cohort_table = cohort_table.set_index('Cohort')
+                    st.dataframe(cohort_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 600))
+                else:
+                    st.warning("No cohort data available for the selected snapshot.")
+
+                st.divider()
+
+                # Time series table
+                st.markdown("### 📅 Cohort Trends Over Time")
+
+                metric_choice = st.radio(
+                    "Metric",
+                    options=['# Customers', '# Instances'],
+                    horizontal=True,
+                    key='cohort_trend_metric',
+                )
+
+                cohort_pivot = cohort_df.pivot(index='Date', columns='Cohort', values=metric_choice)
+                cohort_pivot = cohort_pivot.sort_index(ascending=False)
+                cohort_pivot.index = pd.to_datetime(cohort_pivot.index).strftime('%Y-%m-%d')
+
+                st.dataframe(cohort_pivot, use_container_width=True, height=400)
+
+                # Download
+                st.download_button(
+                    label=":material/download: Download Cohort Data (CSV)",
+                    data=cohort_df.to_csv(index=False).encode('utf-8'),
+                    file_name=f"aiaa_cohort_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
 
     with tab4:
         st.subheader("Adoption Loss Analysis")
