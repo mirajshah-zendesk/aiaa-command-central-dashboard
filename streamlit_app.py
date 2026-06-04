@@ -169,6 +169,48 @@ def load_data_from_snowflake():
     except Exception as e:
         return None, str(e)
 
+@st.cache_data(ttl=3600)
+def load_aie_project_health():
+    """
+    One row per CRM account with the canonical AI Expert project's
+    zd_health_summary_c. Tiebreakers (in order):
+      1. Currently active (start <= today AND (end IS NULL OR end >= today))
+      2. More submitted hours
+      3. Most recently started
+      4. Most recently created
+    """
+    try:
+        session = get_active_session()
+        query = """
+        WITH ranked AS (
+            SELECT
+                pse_account_c                        AS crm_account_id,
+                zd_health_summary_c,
+                ROW_NUMBER() OVER (
+                    PARTITION BY pse_account_c
+                    ORDER BY
+                        CASE
+                            WHEN pse_start_date_c <= CURRENT_DATE()
+                             AND (pse_end_date_c IS NULL OR pse_end_date_c >= CURRENT_DATE())
+                            THEN 0 ELSE 1
+                        END,
+                        pse_total_submitted_hours_c DESC NULLS LAST,
+                        pse_start_date_c DESC NULLS LAST,
+                        created_date DESC
+                ) AS rn
+            FROM cleansed.salesforce.salesforce_pse_proj_c_bcv
+            WHERE name ILIKE '%AI Expert%'
+              AND pse_account_c IS NOT NULL
+        )
+        SELECT crm_account_id, zd_health_summary_c
+        FROM ranked
+        WHERE rn = 1
+        """
+        df = session.sql(query).to_pandas()
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
 def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
     return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -1425,6 +1467,19 @@ else:
 
             icl_df = gdf[gdf['SOURCE_SNAPSHOT_DATE'] == icl_date].copy()
 
+            # Merge in AI Expert project health summary (one row per CRM, picked
+            # by tiebreaker rules — see load_aie_project_health docstring).
+            aie_health, aie_err = load_aie_project_health()
+            if aie_err or aie_health is None:
+                st.caption(f"Could not load zd_health_summary: {aie_err}")
+                icl_df['__ZD_HEALTH_SUMMARY__'] = None
+            else:
+                aie_lookup = aie_health.rename(columns={
+                    'CRM_ACCOUNT_ID': 'CRM_ACCOUNT_ID',
+                    'ZD_HEALTH_SUMMARY_C': '__ZD_HEALTH_SUMMARY__',
+                })[['CRM_ACCOUNT_ID', '__ZD_HEALTH_SUMMARY__']]
+                icl_df = icl_df.merge(aie_lookup, on='CRM_ACCOUNT_ID', how='left')
+
             # Column projection: (source_col_or_None, output_col_name)
             # NULL placeholders for known gaps in the source SQL.
             column_map = [
@@ -1454,6 +1509,7 @@ else:
                 ('COHORT',                        'usage_cohort_snapshot'),
                 (None,                            'current_quarter_adoption_target'),  # GAP
                 ('PROJECT_HEALTH',                'project_health'),
+                ('__ZD_HEALTH_SUMMARY__',         'project_health_summary'),
                 (None,                            'project_update'),                   # GAP
                 ('BOT_TYPE',                      'bot_type'),
                 ('PROJECTED_GO_LIVE_DATE',        'target_deploy_date'),
