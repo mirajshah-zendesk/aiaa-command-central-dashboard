@@ -725,12 +725,13 @@ else:
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab_icl, tab6 = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
         ":material/warning: Adoption Loss",
         ":material/table: Data Explorer",
+        ":material/list_alt: Integrated Cohort List",
         ":material/info: Metrics Guide"
     ])
 
@@ -1400,6 +1401,122 @@ else:
 
         if selected_columns:
             st.dataframe(explorer_df[selected_columns].head(1000), use_container_width=True, height=500)
+
+    with tab_icl:
+        st.subheader("Integrated Cohort List")
+        st.caption(
+            "Replicates the Integrated Cohort List SQL: one row per instance for the selected snapshot date, "
+            "ordered by cohort then ARR. AR / AR count / bot interactions are shown as both `_paid` and `_advanced` variants."
+        )
+
+        # Snapshot date selector — defaults to the latest available
+        icl_dates = sorted(gdf['SOURCE_SNAPSHOT_DATE'].dropna().unique(), reverse=True)
+        if len(icl_dates) == 0:
+            st.warning("No data available.")
+        else:
+            default_date = icl_dates[0]
+            icl_date = st.selectbox(
+                "Snapshot date",
+                options=icl_dates,
+                index=0,
+                format_func=lambda d: pd.Timestamp(d).strftime('%Y-%m-%d'),
+                key='icl_snapshot_date',
+            )
+
+            icl_df = gdf[gdf['SOURCE_SNAPSHOT_DATE'] == icl_date].copy()
+
+            # Column projection: (source_col_or_None, output_col_name)
+            # NULL placeholders for known gaps in the source SQL.
+            column_map = [
+                ('SOURCE_SNAPSHOT_DATE',          'source_snapshot_date'),
+                ('INSTANCE_ACCOUNT_ID',           'instance_account_id'),
+                ('INSTANCE_ACCOUNT_SUBDOMAIN',    'instance_account_subdomain'),
+                ('CRM_ACCOUNT_ID',                'crm_account_id'),
+                ('CRM_ACCOUNT_NAME',              'crm_account_name'),
+                ('CRM_NET_ARR_USD',               'customer_net_arr_usd'),
+                ('CRM_ARR_BAND_BROAD',            'crm_arr_band'),
+                ('AI_ARR',                        'ai_arr'),
+                ('CRM_MARKET_SEGMENT',            'customer_segment'),
+                ('CRM_REGION',                    'region'),
+                ('CRM_SUB_REGION',                'subregion'),
+                ('CRM_INDUSTRY',                  'industry'),
+                ('CRM_MARKET_SUPER_SEGMENT',      'cs_segment'),
+                ('CRM_NEXT_RENEWAL_DATE',         'renewal_date'),
+                ('CRM_HEALTH_STATUS',             'crm_health_status'),
+                ('AI_EXPERT_FLAG',                'purchased_aie'),
+                ('CONSULTANT_NAME',               'consultant'),
+                (None,                            'consultant_manager'),               # GAP
+                ('SUBCO_ORGANIZATION',            'consultant_subcontractor_name'),
+                ('AI_STRATEGIST_NAME',            'strategist'),
+                ('AI_STRATEGIST_MANAGER_NAME',    'strategist_manager'),
+                ('THIRD_PARTY_AI_BOT',            'third_party_ai_bot'),
+                ('CURRENT_PHASE',                 'current_phase'),
+                ('COHORT',                        'usage_cohort_snapshot'),
+                (None,                            'current_quarter_adoption_target'),  # GAP
+                ('PROJECT_HEALTH',                'project_health'),
+                (None,                            'project_update'),                   # GAP
+                ('BOT_TYPE',                      'bot_type'),
+                ('PROJECTED_GO_LIVE_DATE',        'target_deploy_date'),
+                ('TARGET_DEPLOY_DATE_LAST_WEEK',  'targeted_deploy_last_week'),
+                ('ACTUAL_GO_LIVE_DATE',           'actual_deploy_date'),
+                (None,                            'delay_codes'),                      # GAP
+                ('ACTIVE_BOTS_28D_COUNT',         'num_bots_by_channel'),
+                (None,                            'num_use_cases'),                    # GAP
+                ('AR_RATE_PAID',                  'ar_rate_28d_paid'),
+                ('AR_RATE_ADVANCED',              'ar_rate_28d_advanced'),
+                ('AUTOMATED_RESOLUTIONS_PAID',    'num_automated_resolutions_28d_paid'),
+                ('AUTOMATED_RESOLUTIONS_ADVANCED','num_automated_resolutions_28d_advanced'),
+                ('BOT_INTERACTIONS_PAID',         'num_bot_interactions_28d_paid'),
+                ('BOT_INTERACTIONS_ADVANCED',     'num_bot_interactions_28d_advanced'),
+                ('TOP_BOX_PERCENTAGE',            'bsat_28d_top_box_pct'),
+            ]
+
+            output = pd.DataFrame(index=icl_df.index)
+            missing_cols = []
+            for src, out in column_map:
+                if src is None:
+                    output[out] = None
+                elif src in icl_df.columns:
+                    output[out] = icl_df[src]
+                else:
+                    output[out] = None
+                    missing_cols.append(src)
+
+            # Sort: cohort asc, ARR desc nulls last, instance_account_id asc
+            sort_cols = ['usage_cohort_snapshot', 'customer_net_arr_usd', 'instance_account_id']
+            sort_asc = [True, False, True]
+            output['__arr_null'] = output['customer_net_arr_usd'].isna()
+            output = output.sort_values(
+                by=['usage_cohort_snapshot', '__arr_null', 'customer_net_arr_usd', 'instance_account_id'],
+                ascending=[True, True, False, True],
+            ).drop(columns='__arr_null')
+
+            if missing_cols:
+                st.warning(f"Columns missing from mart (filled with NULL): {', '.join(missing_cols)}")
+
+            icl_search_fields = [c for c in ('crm_account_id', 'crm_account_name', 'instance_account_id', 'instance_account_subdomain') if c in output.columns]
+            icl_search_term = st.text_input(
+                "Search account",
+                placeholder="Enter CRM account ID/name, instance account ID, or subdomain (partial matches OK)",
+                key="icl_search",
+            )
+            if icl_search_term and icl_search_fields:
+                term_lower = icl_search_term.strip().lower()
+                mask = pd.Series(False, index=output.index)
+                for field in icl_search_fields:
+                    mask = mask | output[field].astype(str).str.lower().str.contains(term_lower, na=False)
+                output = output[mask]
+                st.caption(f"Matched {len(output):,} rows across {', '.join(icl_search_fields)}.")
+
+            st.markdown(f"**Rows:** {len(output):,}")
+            st.dataframe(output, use_container_width=True, height=600)
+
+            st.download_button(
+                label=":material/download: Download Integrated Cohort List (CSV)",
+                data=output.to_csv(index=False).encode('utf-8'),
+                file_name=f"integrated_cohort_list_{pd.Timestamp(icl_date).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+            )
 
     with tab6:
         st.subheader("Metrics Guide")
