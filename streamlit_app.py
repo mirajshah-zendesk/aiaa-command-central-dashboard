@@ -42,6 +42,8 @@ def init_notes_table():
         CREATE TABLE IF NOT EXISTS STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES (
             CRM_ACCOUNT_ID VARCHAR(255),
             CRM_ACCOUNT_NAME VARCHAR(500),
+            INSTANCE_ACCOUNT_ID VARCHAR(255),
+            INSTANCE_NAME VARCHAR(500),
             SNAPSHOT_DATE DATE,
             NOTES TEXT,
             CREATED_BY VARCHAR(255),
@@ -56,7 +58,7 @@ def init_notes_table():
         st.error(f"Error initializing notes table: {e}")
         return False
 
-def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email):
+def save_note(crm_account_id, crm_account_name, instance_account_id, instance_name, snapshot_date, notes, user_email):
     """Save or update a note for a customer"""
     try:
         session = get_active_session()
@@ -66,20 +68,6 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
             snapshot_date_str = snapshot_date.strftime('%Y-%m-%d')
         else:
             snapshot_date_str = str(snapshot_date)
-
-        # Create a temporary dataframe with the data to merge
-        from snowflake.snowpark.functions import lit, current_timestamp
-
-        temp_df = session.create_dataframe([{
-            'CRM_ACCOUNT_ID': crm_account_id,
-            'CRM_ACCOUNT_NAME': crm_account_name,
-            'SNAPSHOT_DATE': snapshot_date_str,
-            'NOTES': notes,
-            'CREATED_BY': user_email
-        }])
-
-        # Write to a temporary stage or use direct merge
-        # For now, let's try a simpler approach: check if exists, then update or insert
 
         # Check if record exists
         check_sql = f"""
@@ -96,6 +84,8 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
             update_sql = f"""
             UPDATE STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
             SET NOTES = $${notes}$$,
+                INSTANCE_ACCOUNT_ID = '{instance_account_id}',
+                INSTANCE_NAME = $${instance_name}$$,
                 UPDATED_AT = CURRENT_TIMESTAMP()
             WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
               AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
@@ -107,10 +97,12 @@ def save_note(crm_account_id, crm_account_name, snapshot_date, notes, user_email
             # Insert new record
             insert_sql = f"""
             INSERT INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
-            (CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, SNAPSHOT_DATE, NOTES, CREATED_BY, UPDATED_AT)
+            (CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, INSTANCE_ACCOUNT_ID, INSTANCE_NAME, SNAPSHOT_DATE, NOTES, CREATED_BY, UPDATED_AT)
             VALUES (
                 '{crm_account_id}',
                 $${crm_account_name}$$,
+                '{instance_account_id}',
+                $${instance_name}$$,
                 '{snapshot_date_str}'::DATE,
                 $${notes}$$,
                 '{user_email}',
@@ -140,7 +132,7 @@ def load_notes(snapshot_date):
             snapshot_date_str = str(snapshot_date)
 
         query = f"""
-        SELECT CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, NOTES, CREATED_BY, UPDATED_AT
+        SELECT CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, INSTANCE_ACCOUNT_ID, INSTANCE_NAME, NOTES, CREATED_BY, UPDATED_AT
         FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ADOPTION_LOSS_NOTES
         WHERE SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
         """
@@ -149,7 +141,7 @@ def load_notes(snapshot_date):
     except Exception as e:
         # Table might not exist yet or other error
         st.warning(f"Could not load notes: {e}")
-        return pd.DataFrame(columns=['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'NOTES', 'CREATED_BY', 'UPDATED_AT'])
+        return pd.DataFrame(columns=['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_NAME', 'NOTES', 'CREATED_BY', 'UPDATED_AT'])
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_data_from_snowflake():
@@ -1166,6 +1158,8 @@ else:
                     # Latest snapshot
                     lost_latest_agg = lost_customers_latest.groupby('CRM_ACCOUNT_ID').agg({
                         'CRM_ACCOUNT_NAME': 'first',
+                        'INSTANCE_ACCOUNT_ID': 'first',  # Take first instance ID
+                        'INSTANCE_ACCOUNT_SUBDOMAIN': 'first',  # Take first instance name
                         'CRM_REGION': 'first',
                         'CRM_ARR_BAND_BROAD': 'first',
                         'CRM_MARKET_SEGMENT': 'first',
@@ -1216,7 +1210,8 @@ else:
 
                     # Reorder columns
                     column_order = [
-                        'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN',
+                        'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
                         'Current AR Rate', 'Previous AR Rate',
                         'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
                     ]
@@ -1229,9 +1224,8 @@ else:
                     lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
                     lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    # Remove CRM_ACCOUNT_ID from display
-                    lost_df_display_no_id = lost_df_display.drop(columns=['CRM_ACCOUNT_ID'])
-                    st.dataframe(lost_df_display_no_id, use_container_width=True, height=400)
+                    # Keep all columns for display (including instance info)
+                    st.dataframe(lost_df_display, use_container_width=True, height=400)
 
                     # Add notes input section
                     st.markdown("#### 📝 Add/Edit Notes")
@@ -1245,20 +1239,22 @@ else:
                         current_user = "unknown_user"
 
                     # Customer selector
-                    customer_names = lost_df[['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME']].values.tolist()
-                    customer_display = [f"{name}" for id, name in customer_names]
-                    customer_map = {f"{name}": id for id, name in customer_names}
+                    customer_names = lost_df[['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN']].values.tolist()
+                    customer_display = [f"{name}" for id, name, inst_id, inst_name in customer_names]
+                    customer_map = {f"{name}": (id, inst_id, inst_name) for id, name, inst_id, inst_name in customer_names}
 
                     selected_customer = st.selectbox("Select Customer", customer_display, key="lost_customer_select")
 
                     if selected_customer:
-                        selected_id = customer_map[selected_customer]
+                        selected_id, selected_instance_id, selected_instance_name = customer_map[selected_customer]
                         existing_note = notes_dict.get(selected_id, "")
 
                         # Show debug info
                         with st.expander("🔍 Debug: Customer Info", expanded=False):
                             st.write(f"**Selected Customer:** {selected_customer}")
                             st.write(f"**CRM Account ID:** {selected_id}")
+                            st.write(f"**Instance Account ID:** {selected_instance_id}")
+                            st.write(f"**Instance Name:** {selected_instance_name}")
                             st.write(f"**Snapshot Date:** {latest_date}")
                             st.write(f"**Existing Note:** {existing_note if existing_note else '(none)'}")
 
@@ -1275,13 +1271,15 @@ else:
                             st.write("**Debug - About to save:**")
                             st.write(f"- CRM Account ID: `{selected_id}`")
                             st.write(f"- Customer Name: `{selected_customer}`")
+                            st.write(f"- Instance Account ID: `{selected_instance_id}`")
+                            st.write(f"- Instance Name: `{selected_instance_name}`")
                             st.write(f"- Snapshot Date: `{latest_date}`")
                             st.write(f"- Note Text: `{note_text}`")
                             st.write(f"- Note Length: {len(note_text)} characters")
                             st.write(f"- User: `{current_user}`")
 
                             with st.spinner("Saving note..."):
-                                success = save_note(selected_id, selected_customer, latest_date, note_text, current_user)
+                                success = save_note(selected_id, selected_customer, selected_instance_id, selected_instance_name, latest_date, note_text, current_user)
                             if success:
                                 st.success(f"✓ Note saved for {selected_customer} (ID: {selected_id})")
                                 st.info("Refreshing page to load updated notes...")
@@ -1289,12 +1287,11 @@ else:
                             else:
                                 st.error("Failed to save note - check error message above")
 
-                    # Download button (with unformatted data for Excel, excluding CRM_ACCOUNT_ID)
+                    # Download button (with unformatted data for Excel, including all columns)
                     st.divider()
-                    lost_df_download = lost_df.drop(columns=['CRM_ACCOUNT_ID'])
                     st.download_button(
                         label=":material/download: Download Lost Adoption List with Notes (CSV)",
-                        data=lost_df_download.to_csv(index=False).encode('utf-8'),
+                        data=lost_df.to_csv(index=False).encode('utf-8'),
                         file_name=f"lost_adoption_{previous_date.strftime('%Y%m%d')}_to_{latest_date.strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
