@@ -1327,15 +1327,6 @@ else:
                     existing_notes = load_notes(latest_date)
                     notes_dict = dict(zip(existing_notes['CRM_ACCOUNT_ID'], existing_notes['NOTES'])) if len(existing_notes) > 0 else {}
 
-                    # Debug: Show loaded notes
-                    with st.expander("🔍 Debug: Loaded Notes", expanded=False):
-                        st.write(f"**Snapshot Date:** {latest_date}")
-                        st.write(f"**Number of notes loaded:** {len(existing_notes)}")
-                        if len(existing_notes) > 0:
-                            st.dataframe(existing_notes, use_container_width=True)
-                        else:
-                            st.info("No notes found for this snapshot date.")
-
                     # Merge notes into the dataframe
                     lost_df['Notes'] = lost_df['CRM_ACCOUNT_ID'].map(notes_dict).fillna('')
 
