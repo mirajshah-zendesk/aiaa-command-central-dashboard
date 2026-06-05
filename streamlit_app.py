@@ -1758,7 +1758,7 @@ else:
                 else:
                     notes_lookup = notes_df.copy()
                 notes_lookup['__last_edited__'] = notes_lookup.apply(
-                    lambda r: f"{r['UPDATED_BY']} · {pd.Timestamp(r['UPDATED_AT']).strftime('%Y-%m-%d %H:%M')}"
+                    lambda r: f"{r['UPDATED_BY']} · {pd.Timestamp(r['UPDATED_AT']).strftime('%Y-%m-%d %H:%M')} UTC"
                     if pd.notna(r.get('UPDATED_AT')) else '',
                     axis=1,
                 )
