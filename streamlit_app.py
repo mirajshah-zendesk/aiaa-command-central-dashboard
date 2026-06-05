@@ -2026,7 +2026,8 @@ else:
                     'Median Days to Kickoff': '{:.1f}',
                     'Median Time to Adopt': '{:.0f}'
                 }),
-                use_container_width=True
+                use_container_width=True,
+                hide_index=True
             )
 
             st.markdown("""
@@ -2067,7 +2068,8 @@ else:
             st.dataframe(
                 customer_data,
                 use_container_width=True,
-                height=400
+                height=400,
+                hide_index=True
             )
 
             # Download button for customer data
@@ -2077,66 +2079,6 @@ else:
                 file_name=f"kickoff_customer_data_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
-
-            # Account-level explorer
-            with st.expander("📋 Account-Level Data Explorer"):
-                st.markdown("Filter and explore individual account kickoff data")
-
-                # Filters
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    selected_regions = st.multiselect(
-                        "Region",
-                        options=sorted(kickoff_df['CRM_REGION'].dropna().unique()),
-                        key="kickoff_region_filter"
-                    )
-
-                with col2:
-                    selected_ai_expert = st.multiselect(
-                        "AI Expert",
-                        options=sorted(kickoff_df['AI_EXPERT_FLAG'].dropna().unique()),
-                        key="kickoff_ai_expert_filter"
-                    )
-
-                with col3:
-                    selected_timing = st.multiselect(
-                        "Kickoff Timing",
-                        options=sorted(kickoff_df['KICKOFF_TIMING_BUCKET'].unique()),
-                        key="kickoff_timing_filter"
-                    )
-
-                # Apply filters
-                filtered_kickoff_df = kickoff_df.copy()
-                if selected_regions:
-                    filtered_kickoff_df = filtered_kickoff_df[filtered_kickoff_df['CRM_REGION'].isin(selected_regions)]
-                if selected_ai_expert:
-                    filtered_kickoff_df = filtered_kickoff_df[filtered_kickoff_df['AI_EXPERT_FLAG'].isin(selected_ai_expert)]
-                if selected_timing:
-                    filtered_kickoff_df = filtered_kickoff_df[filtered_kickoff_df['KICKOFF_TIMING_BUCKET'].isin(selected_timing)]
-
-                # Display columns
-                display_cols = [
-                    'CRM_ACCOUNT_NAME', 'CRM_REGION', 'AI_EXPERT_FLAG',
-                    'KICKOFF_TIMING_BUCKET',
-                    'DAYS_TO_KICKOFF', 'TIME_TO_ADOPT_PAID',
-                    'INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED',
-                    'CALL_TITLE'
-                ]
-
-                st.dataframe(
-                    filtered_kickoff_df[display_cols].sort_values('DAYS_TO_KICKOFF'),
-                    use_container_width=True,
-                    height=400
-                )
-
-                # Download button
-                st.download_button(
-                    label=":material/download: Download Kickoff Analysis Data (CSV)",
-                    data=filtered_kickoff_df.to_csv(index=False).encode('utf-8'),
-                    file_name=f"kickoff_analysis_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
 
 # Footer
 st.divider()
