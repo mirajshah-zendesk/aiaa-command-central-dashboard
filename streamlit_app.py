@@ -90,8 +90,6 @@ def save_note(crm_account_id, crm_account_name, instance_account_id, instance_na
             WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
               AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
             """
-            st.info(f"Executing UPDATE SQL (notes length: {len(notes)} chars)")
-            st.code(update_sql, language="sql")
             session.sql(update_sql).collect()
         else:
             # Insert new record
@@ -109,8 +107,6 @@ def save_note(crm_account_id, crm_account_name, instance_account_id, instance_na
                 CURRENT_TIMESTAMP()
             )
             """
-            st.info(f"Executing INSERT SQL (notes length: {len(notes)} chars)")
-            st.code(insert_sql, language="sql")
             session.sql(insert_sql).collect()
 
         return True
@@ -1387,18 +1383,20 @@ else:
                     lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
                     lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    # Select columns for display (remove IDs and calculation columns)
+                    # Select columns for display (remove IDs, calculation columns, and Notes)
                     display_columns = [
                         'Account', 'Instance', 'Category', 'Region', 'ARR Band', 'Segment',
                         'AI Strategist', 'CSM',
                         'Current AR Rate', 'Previous AR Rate',
-                        'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
+                        'Current ARs (28d)', 'Previous ARs (28d)'
                     ]
                     st.dataframe(lost_df_display[display_columns], use_container_width=True, height=400, hide_index=True)
 
+                    st.divider()
+
                     # Add notes input section
-                    st.markdown("#### 📝 Add/Edit Notes")
-                    st.info("Select a customer and add notes to explain why they are unadopted.")
+                    st.markdown("#### 📝 Customer Notes")
+                    st.info("Select a customer below to view or edit notes explaining why they lost adoption.")
 
                     # Get current user
                     try:
@@ -1418,35 +1416,21 @@ else:
                         selected_id, selected_instance_id, selected_instance_name = customer_map[selected_customer]
                         existing_note = notes_dict.get(selected_id, "")
 
-                        # Show debug info
-                        with st.expander("🔍 Debug: Customer Info", expanded=False):
-                            st.write(f"**Selected Customer:** {selected_customer}")
-                            st.write(f"**CRM Account ID:** {selected_id}")
-                            st.write(f"**Instance Account ID:** {selected_instance_id}")
-                            st.write(f"**Instance Name:** {selected_instance_name}")
-                            st.write(f"**Snapshot Date:** {latest_date}")
-                            st.write(f"**Existing Note:** {existing_note if existing_note else '(none)'}")
+                        # Show existing note if present
+                        if existing_note:
+                            st.markdown("**Current Notes:**")
+                            st.info(existing_note)
 
+                        # Notes text area
                         note_text = st.text_area(
-                            "Notes",
+                            f"Edit notes for {selected_customer}",
                             value=existing_note,
-                            height=100,
-                            placeholder="Enter notes explaining why this customer is unadopted...",
+                            height=200,
+                            placeholder="Enter notes explaining why this customer lost adoption...",
                             key=f"note_input_{selected_id}"
                         )
 
                         if st.button("💾 Save Note", key=f"save_note_{selected_id}"):
-                            # Debug: show what we're about to save
-                            st.write("**Debug - About to save:**")
-                            st.write(f"- CRM Account ID: `{selected_id}`")
-                            st.write(f"- Customer Name: `{selected_customer}`")
-                            st.write(f"- Instance Account ID: `{selected_instance_id}`")
-                            st.write(f"- Instance Name: `{selected_instance_name}`")
-                            st.write(f"- Snapshot Date: `{latest_date}`")
-                            st.write(f"- Note Text: `{note_text}`")
-                            st.write(f"- Note Length: {len(note_text)} characters")
-                            st.write(f"- User: `{current_user}`")
-
                             with st.spinner("Saving note..."):
                                 success = save_note(selected_id, selected_customer, selected_instance_id, selected_instance_name, latest_date, note_text, current_user)
                             if success:
