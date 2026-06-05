@@ -1285,6 +1285,8 @@ else:
                         'CRM_REGION': 'first',
                         'CRM_ARR_BAND_BROAD': 'first',
                         'CRM_MARKET_SEGMENT': 'first',
+                        'AI_STRATEGIST_NAME': 'first',  # AI Success Strategist
+                        'CONSULTANT_NAME': 'first',  # AI Expert Consultant/CSM
                         'AR_RATE_PAID': 'mean',  # Average AR rate across instances
                         'AUTOMATED_RESOLUTIONS_PAID': 'sum'  # Sum ARs across instances
                     }).reset_index()
@@ -1303,8 +1305,15 @@ else:
                         suffixes=('_Current', '_Previous')
                     )
 
-                    # Rename columns for clarity
+                    # Rename columns for clarity with shortened names
                     lost_df = lost_df.rename(columns={
+                        'CRM_ACCOUNT_NAME': 'Account',
+                        'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance',
+                        'CRM_REGION': 'Region',
+                        'CRM_ARR_BAND_BROAD': 'ARR Band',
+                        'CRM_MARKET_SEGMENT': 'Segment',
+                        'AI_STRATEGIST_NAME': 'AI Strategist',
+                        'CONSULTANT_NAME': 'CSM',
                         'AR_RATE_PAID_Current': 'Current AR Rate',
                         'AR_RATE_PAID_Previous': 'Previous AR Rate',
                         'AUTOMATED_RESOLUTIONS_PAID_Current': 'Current ARs (28d)',
@@ -1332,12 +1341,12 @@ else:
 
                     # Reorder columns (keep IDs for internal use but not display)
                     column_order = [
-                        'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN',
-                        'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'CRM_ACCOUNT_ID', 'Account', 'INSTANCE_ACCOUNT_ID', 'Instance',
+                        'Region', 'ARR Band', 'Segment', 'AI Strategist', 'CSM',
                         'Current AR Rate', 'Previous AR Rate',
                         'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
                     ]
-                    lost_df = lost_df[column_order].sort_values('CRM_ACCOUNT_NAME')
+                    lost_df = lost_df[column_order].sort_values('Account')
 
                     # Create display dataframe with formatted values
                     lost_df_display = lost_df.copy()
@@ -1348,8 +1357,8 @@ else:
 
                     # Select columns for display (remove CRM_ACCOUNT_ID and INSTANCE_ACCOUNT_ID)
                     display_columns = [
-                        'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
-                        'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'Account', 'Instance', 'Region', 'ARR Band', 'Segment',
+                        'AI Strategist', 'CSM',
                         'Current AR Rate', 'Previous AR Rate',
                         'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
                     ]
