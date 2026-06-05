@@ -2400,6 +2400,27 @@ else:
                 mime="text/csv",
             )
 
+            # ==================== TEAM ROSTERS ====================
+            with st.expander(":material/groups: Team Rosters", expanded=False):
+                if len(team_df) == 0:
+                    st.info("Team mapping is empty.")
+                else:
+                    roster_col1, roster_col2 = st.columns(2)
+                    with roster_col1:
+                        st.markdown("#### AI Consultant Teams")
+                        consultants = team_df[team_df['ROLE'] == 'AI Consultant']
+                        for team_name in sorted(consultants['TEAM'].unique()):
+                            members = sorted(consultants[consultants['TEAM'] == team_name]['FULL_NAME'].tolist())
+                            st.markdown(f"**{team_name}** ({len(members)})")
+                            st.markdown("\n".join(f"- {m}" for m in members))
+                    with roster_col2:
+                        st.markdown("#### AI Strategist Teams")
+                        strategists = team_df[team_df['ROLE'] == 'AI Strategist']
+                        for team_name in sorted(strategists['TEAM'].unique()):
+                            members = sorted(strategists[strategists['TEAM'] == team_name]['FULL_NAME'].tolist())
+                            st.markdown(f"**{team_name}** ({len(members)})")
+                            st.markdown("\n".join(f"- {m}" for m in members))
+
 # Footer
 st.divider()
 st.markdown("<div style='text-align: center; color: gray;'>AIAA Command Central</div>", unsafe_allow_html=True)
