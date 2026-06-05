@@ -2042,8 +2042,8 @@ else:
             customer_data = kickoff_df[[
                 'CRM_ACCOUNT_NAME',
                 'CALL_TITLE',
-                'KICKOFF_CALL_DATE',
                 'AIAA_START_DATE',
+                'KICKOFF_CALL_DATE',
                 'FIRST_ADOPTION_DATE_PAID',
                 'DAYS_TO_KICKOFF',
                 'TIME_TO_ADOPT_PAID',
@@ -2053,8 +2053,8 @@ else:
             customer_data.columns = [
                 'Customer Name',
                 'Call Title',
-                'Kickoff Call Date',
                 'AIAA Start Date',
+                'Kickoff Call Date',
                 'Adoption Date',
                 'Days to Kickoff',
                 'Days to Adopt',
