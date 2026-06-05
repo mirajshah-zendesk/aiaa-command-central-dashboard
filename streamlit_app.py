@@ -2155,6 +2155,10 @@ else:
             "Each CRM account counts at most once per milestone — multiple instances of the same CRM don't multiply points. "
             "If a customer hits both deployed and adopted in the window, only adopted is counted."
         )
+        st.caption(
+            "**Note:** This leaderboard now scores against **AI Agents Paid** (Advanced + Essentials + Legacy Gen). "
+            "Previously it was scored against AI Agents Advanced only, so some point totals and counts may differ from earlier snapshots."
+        )
 
         # Build the per-instance event dataset (latest snapshot, paid penetrated only)
         spiff_source = st.session_state.global_data.copy() if st.session_state.global_data is not None else None
