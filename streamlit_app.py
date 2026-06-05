@@ -2004,38 +2004,6 @@ else:
         elif kickoff_df is None or len(kickoff_df) == 0:
             st.warning("No kickoff call data available.")
         else:
-            # Key insights at the top
-            st.markdown("### 🎯 Key Insight")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric(
-                    "Total Accounts with Kickoffs",
-                    f"{len(kickoff_df):,}",
-                    help="Accounts with high-confidence kickoff calls identified"
-                )
-
-            with col2:
-                optimal_window = kickoff_df[kickoff_df['KICKOFF_TIMING_BUCKET'] == '2. Within 2 weeks']
-                if len(optimal_window) > 0:
-                    median_adopt = optimal_window['TIME_TO_ADOPT_PAID'].median()
-                    st.metric(
-                        "Optimal Window: 7-14 Days",
-                        f"{median_adopt:.0f} days" if pd.notna(median_adopt) else "N/A",
-                        help="Median time to adoption for kickoffs in weeks 2"
-                    )
-
-            with col3:
-                activated_pct = (kickoff_df['INSTANCE_IS_AI_AGENTS_ADVANCED_ACTIVATED'] == 'TRUE').sum() / len(kickoff_df) * 100
-                st.metric(
-                    "Activation Rate",
-                    f"{activated_pct:.1f}%",
-                    help="% of accounts with kickoffs that activated"
-                )
-
-            st.divider()
-
             # Summary statistics by timing bucket
             st.markdown("### 📊 Impact of Kickoff Timing on Time-to-Value")
 
