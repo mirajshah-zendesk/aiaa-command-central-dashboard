@@ -291,6 +291,12 @@ SPIFF_NAME_ALIASES = {
     'Harvey Hind-Pichter': 'Harvey Hind-Pitcher',  # typo in upstream data
 }
 
+# Names excluded from the leaderboard entirely (e.g., partner / subco resources).
+SPIFF_EXCLUDED_NAMES = {
+    'Laura Petri',
+    'Gustavo Prezoto',
+}
+
 @st.cache_data(ttl=3600)
 def load_spiff_team_mapping():
     """One row per person with their team and role (AI Strategist or AI Consultant)."""
@@ -2135,17 +2141,18 @@ else:
             )
 
     with tab_spiff:
-        st.subheader(":material/emoji_events: SPIFF Leaderboard")
-        st.markdown(
-            "[:material/slideshow: **Competition details**]"
-            "(https://docs.google.com/presentation/d/1I-IkP5n_DgsYQFvqZDSHiuaXh5JPxXB9gRykAI2lVjY/edit?usp=sharing)"
+        st.subheader(":material/emoji_events: SPIFF Leaderboard — AI Agents Paid")
+        st.info(
+            f"### :material/slideshow: [Competition details]"
+            f"(https://docs.google.com/presentation/d/1I-IkP5n_DgsYQFvqZDSHiuaXh5JPxXB9gRykAI2lVjY/edit?usp=sharing)\n\n"
+            f"**Scoring window:** {SPIFF_WINDOW_START} to {SPIFF_WINDOW_END}  \n"
+            f"**Points:** {SPIFF_POINTS_DEPLOYED} per first AI Agent deployed · "
+            f"{SPIFF_POINTS_ADOPTED} per first adoption · "
+            f"{SPIFF_POINTS_AR50} per first 50% AR rate"
         )
         st.caption(
-            f"Scoring window: **{SPIFF_WINDOW_START} to {SPIFF_WINDOW_END}**. "
-            f"Points: **{SPIFF_POINTS_DEPLOYED}** per first AI Agent deployed, "
-            f"**{SPIFF_POINTS_ADOPTED}** per first adoption, "
-            f"**{SPIFF_POINTS_AR50}** per first 50% AR rate. "
-            "Only customers currently penetrated on AI Agents Paid count. "
+            "Scope: customers currently penetrated on **AI Agents Paid**. "
+            "Each CRM account counts at most once per milestone — multiple instances of the same CRM don't multiply points. "
             "If a customer hits both deployed and adopted in the window, only adopted is counted."
         )
 
@@ -2180,6 +2187,11 @@ else:
                 if col in spiff_latest.columns:
                     spiff_latest[col] = spiff_latest[col].replace(SPIFF_NAME_ALIASES)
 
+            # Drop excluded names (e.g., partner / subco resources).
+            for col in ('CONSULTANT_NAME', 'AI_STRATEGIST_NAME'):
+                if col in spiff_latest.columns:
+                    spiff_latest.loc[spiff_latest[col].isin(SPIFF_EXCLUDED_NAMES), col] = None
+
             # Load team mapping
             team_df, team_err = load_spiff_team_mapping()
             if team_err or team_df is None:
@@ -2196,12 +2208,24 @@ else:
             ))
 
             def build_leaderboard(name_col, team_lookup):
+                """Score is per (name, CRM): a CRM only counts once per
+                milestone even if it has multiple qualifying instances."""
                 df = spiff_latest.copy()
                 df = df[df[name_col].notna() & (df[name_col] != '')]
-                grp = df.groupby(name_col).agg(
-                    bots_deployed=('DEPLOYED_COUNTED', 'sum'),
-                    adopted=('ADOPTED_IN_WIN', 'sum'),
-                    ar50=('AR50_IN_WIN', 'sum'),
+                # Collapse to (name, crm) — any qualifying instance flips the bit.
+                per_crm = df.groupby([name_col, 'CRM_ACCOUNT_ID']).agg(
+                    deployed_in_win=('DEPLOYED_IN_WIN', 'max'),
+                    adopted_in_win=('ADOPTED_IN_WIN', 'max'),
+                    ar50_in_win=('AR50_IN_WIN', 'max'),
+                ).reset_index()
+                # Apply the deployed-vs-adopted dedup at CRM level.
+                per_crm['deployed_counted'] = per_crm.apply(
+                    lambda r: 0 if r['adopted_in_win'] == 1 else r['deployed_in_win'], axis=1
+                )
+                grp = per_crm.groupby(name_col).agg(
+                    bots_deployed=('deployed_counted', 'sum'),
+                    adopted=('adopted_in_win', 'sum'),
+                    ar50=('ar50_in_win', 'sum'),
                 ).reset_index()
                 grp = grp.rename(columns={name_col: 'name'})
                 grp['points'] = (
@@ -2234,16 +2258,39 @@ else:
             consultant_team_lb = build_team_leaderboard(consultant_lb)
             strategist_team_lb = build_team_leaderboard(strategist_lb)
 
-            # ==================== PODIUM ====================
-            st.markdown("### 🏆 Podium")
-
             def medal(rank):
                 return {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, '')
 
+            # ==================== TOP TEAMS (full-width row) ====================
+            st.markdown("### 🏅 Top Teams")
+            team_col1, team_col2 = st.columns(2)
+            with team_col1:
+                if len(consultant_team_lb) > 0:
+                    top_team = consultant_team_lb.iloc[0]
+                    st.metric(
+                        label=f"🏆 Top Consultant Team — **{top_team['team']}**",
+                        value=f"{int(top_team['points'])} pts",
+                        delta=f"{int(top_team['members'])} members · {int(top_team['bots_deployed'])} deployed · {int(top_team['adopted'])} adopted · {int(top_team['ar50'])} AR50",
+                        delta_color="off",
+                    )
+            with team_col2:
+                if len(strategist_team_lb) > 0:
+                    top_team = strategist_team_lb.iloc[0]
+                    st.metric(
+                        label=f"🏆 Top Strategist Team — **{top_team['team']}**",
+                        value=f"{int(top_team['points'])} pts",
+                        delta=f"{int(top_team['members'])} members · {int(top_team['bots_deployed'])} deployed · {int(top_team['adopted'])} adopted · {int(top_team['ar50'])} AR50",
+                        delta_color="off",
+                    )
+
+            st.divider()
+
+            # ==================== INDIVIDUAL PODIUM ====================
+            st.markdown("### 🏆 Top 3 Individuals")
             podium_col1, podium_col2 = st.columns(2)
 
             with podium_col1:
-                st.markdown("#### Top 3 AI Consultants")
+                st.markdown("#### AI Consultants")
                 for _, row in consultant_lb.head(3).iterrows():
                     st.metric(
                         label=f"{medal(row['rank'])} {row['name']} ({row['team']})",
@@ -2251,32 +2298,14 @@ else:
                         delta=f"{int(row['bots_deployed'])} deployed · {int(row['adopted'])} adopted · {int(row['ar50'])} AR50",
                         delta_color="off",
                     )
-                if len(consultant_team_lb) > 0:
-                    top_team = consultant_team_lb.iloc[0]
-                    st.markdown("**🏅 Top Consultant Team**")
-                    st.metric(
-                        label=f"{top_team['team']}",
-                        value=f"{int(top_team['points'])} pts",
-                        delta=f"{int(top_team['members'])} members",
-                        delta_color="off",
-                    )
 
             with podium_col2:
-                st.markdown("#### Top 3 AI Strategists")
+                st.markdown("#### AI Strategists")
                 for _, row in strategist_lb.head(3).iterrows():
                     st.metric(
                         label=f"{medal(row['rank'])} {row['name']} ({row['team']})",
                         value=f"{int(row['points'])} pts",
                         delta=f"{int(row['bots_deployed'])} deployed · {int(row['adopted'])} adopted · {int(row['ar50'])} AR50",
-                        delta_color="off",
-                    )
-                if len(strategist_team_lb) > 0:
-                    top_team = strategist_team_lb.iloc[0]
-                    st.markdown("**🏅 Top Strategist Team**")
-                    st.metric(
-                        label=f"{top_team['team']}",
-                        value=f"{int(top_team['points'])} pts",
-                        delta=f"{int(top_team['members'])} members",
                         delta_color="off",
                     )
 
