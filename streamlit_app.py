@@ -1771,6 +1771,19 @@ else:
                 output['notes'] = output['notes'].fillna('')
                 output['last_edited'] = output['last_edited'].fillna('')
 
+            # Format source_snapshot_date as date-only string for display.
+            if 'source_snapshot_date' in output.columns:
+                output['source_snapshot_date'] = pd.to_datetime(
+                    output['source_snapshot_date'], errors='coerce'
+                ).dt.strftime('%Y-%m-%d')
+
+            # Reorder so notes/last_edited sit near the start of the table for
+            # easier note-taking against the row's identifying fields.
+            front_cols = ['source_snapshot_date', 'instance_account_id', 'instance_account_subdomain', 'crm_account_id', 'crm_account_name', 'notes', 'last_edited']
+            front_cols = [c for c in front_cols if c in output.columns]
+            other_cols = [c for c in output.columns if c not in front_cols]
+            output = output[front_cols + other_cols]
+
             st.markdown(f"**Rows:** {len(output):,}")
             st.caption("Edit the **notes** column inline — changes save to a shared table and are visible to other users.")
 
