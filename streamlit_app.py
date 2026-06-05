@@ -1610,8 +1610,9 @@ else:
             if missing_cols:
                 st.warning(f"Columns missing from mart (filled with NULL): {', '.join(missing_cols)}")
 
-            icl_date_str = pd.Timestamp(icl_date).strftime('%Y-%m-%d')
-            usage_cohort_label = f"Usage Cohort Snapshot ({icl_date_str})"
+            # Cohort definitions are pinned to the 2026-04-30 snapshot — they
+            # don't refresh with the selected as-of date.
+            usage_cohort_label = "Usage Cohort Snapshot (2026-04-30)"
 
             def _sort_monthly_cohort(values):
                 # "Apr 2026", "May 2026" -> chronological order. Unparseable
@@ -1641,10 +1642,10 @@ else:
                 with f3:
                     sel_strat_mgr = st.multiselect("Strategist manager", _multi_options('strategist_manager'), key='icl_f_strat_mgr')
                     sel_q2 = st.radio("Q2 Target Account", ['All', 'Yes', 'No / blank'], horizontal=True, key='icl_f_q2')
-                    sel_inst_paid_adp = st.radio("Instance paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_inst_paid_adp')
-                    sel_inst_adv_adp = st.radio("Instance advanced adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_inst_adv_adp')
-                    sel_crm_paid_adp = st.radio("CRM paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_crm_paid_adp')
-                    sel_crm_adv_adp = st.radio("CRM advanced adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_crm_adv_adp')
+                    sel_inst_paid_adp = st.radio("Instance — AI Agents Paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_inst_paid_adp')
+                    sel_inst_adv_adp = st.radio("Instance — AI Agents Advanced adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_inst_adv_adp')
+                    sel_crm_paid_adp = st.radio("CRM — AI Agents Paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_crm_paid_adp')
+                    sel_crm_adv_adp = st.radio("CRM — AI Agents Advanced adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_crm_adv_adp')
 
             def _apply_multi(df, col, selected):
                 if not selected or col not in df.columns:
