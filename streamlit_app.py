@@ -2036,6 +2036,50 @@ else:
 
             st.divider()
 
+            # Customer-level data table
+            st.markdown("### 📋 Customer Details")
+
+            customer_data = kickoff_df[[
+                'CRM_ACCOUNT_NAME',
+                'CALL_TITLE',
+                'KICKOFF_CALL_DATE',
+                'AIAA_START_DATE',
+                'FIRST_ADOPTION_DATE_PAID',
+                'DAYS_TO_KICKOFF',
+                'TIME_TO_ADOPT_PAID',
+                'KICKOFF_TIMING_BUCKET'
+            ]].copy()
+
+            customer_data.columns = [
+                'Customer Name',
+                'Call Title',
+                'Kickoff Call Date',
+                'AIAA Start Date',
+                'Adoption Date',
+                'Days to Kickoff',
+                'Days to Adopt',
+                'Timing Bucket'
+            ]
+
+            # Sort by kickoff timing bucket then by days to adopt
+            customer_data = customer_data.sort_values(['Timing Bucket', 'Days to Adopt'])
+
+            st.dataframe(
+                customer_data,
+                use_container_width=True,
+                height=400
+            )
+
+            # Download button for customer data
+            st.download_button(
+                label=":material/download: Download Customer Data (CSV)",
+                data=customer_data.to_csv(index=False).encode('utf-8'),
+                file_name=f"kickoff_customer_data_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+
+            st.divider()
+
             # Visualization: Focus on adoption only
             st.markdown("### 🎯 Time to Adoption by Kickoff Timing")
 
