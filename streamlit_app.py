@@ -756,7 +756,7 @@ if st.session_state.global_data is None:
     ### Metrics Calculated:
     - **Impact Metrics**: Customer/instance counts, adoption rates
     - **AR Utilization**: AR rates by channel, utilization run rate
-    - **Bot Deployment**: Bot deployment stats, Gen2/Gen3 classification
+    - **AI Agent Deployment**: AI Agent deployment stats, Gen2/Gen3 classification
     - **BSAT**: Top box satisfaction scores
     - **Go-Live**: Actual and projected go-live tracking
 
@@ -981,11 +981,11 @@ else:
                     ("Acceptable (50-80% Verified)", "Customers - Acceptable Verified (50-80%)", "number"),
                     ("Optimal (>80% Verified)", "Customers - Optimal Verified (>80%)", "number"),
                 ],
-                "🚀 Bot Deployment": [
-                    ("Total Active Instances with Bot", "Total active instances with bot deployed", "number"),
-                    ("Bots Deployed This Week", "Bots deployed this week", "number"),
-                    ("Bot Deployed Share %", "Bot deployed share %", "percent"),
-                    ("Bot Interactions (28d)", "Bot deployed share - numerator", "number"),
+                "🚀 AI Agent Deployment": [
+                    ("Total Active Instances with AI Agent", "Total active instances with bot deployed", "number"),
+                    ("AI Agents Deployed This Week", "Bots deployed this week", "number"),
+                    ("AI Agent Deployed Share %", "Bot deployed share %", "percent"),
+                    ("AI Agent Interactions (28d)", "Bot deployed share - numerator", "number"),
                     ("Total Tickets (28d)", "Bot deployed share - denominator", "number"),
                     ("Gen3 Instances", "Gen3 Instances", "number"),
                     ("Actual Go-Live (Past Week)", "Actual Go-Live (past week)", "number"),
@@ -1551,7 +1551,7 @@ else:
         st.subheader("Integrated Cohort List")
         st.caption(
             "Replicates the Integrated Cohort List SQL: one row per instance for the selected snapshot date, "
-            "ordered by cohort then ARR. AR / AR count / bot interactions are shown as both `_paid` and `_advanced` variants."
+            "ordered by cohort then ARR. AR / AR count / AI Agent interactions are shown as both `_paid` and `_advanced` variants."
         )
         st.warning(
             "**Heads up — fields still being debugged:** the following columns currently show empty values "
@@ -1896,7 +1896,7 @@ else:
 
     with tab7:
         st.subheader(":material/rocket_launch: Kickoff Call Impact on Time-to-Value")
-        st.caption("Does earlier kickoff timing correlate with faster bot deployment and adoption?")
+        st.caption("Does earlier kickoff timing correlate with faster AI Agent deployment and adoption?")
 
         # Load kickoff analysis data
         @st.cache_data(ttl=3600)
