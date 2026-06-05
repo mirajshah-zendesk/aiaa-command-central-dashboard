@@ -1,5 +1,5 @@
 """
-AIAA Command Central Dashboard
+AIA Command Central Dashboard
 Calculates all scorecard metrics from GlobalData matching Excel formulas
 Now connects directly to Snowflake: presentation.success.ai_agents_advanced_command_central
 """
@@ -11,7 +11,7 @@ from snowflake.snowpark.context import get_active_session
 
 # Page config
 st.set_page_config(
-    page_title="AIAA Command Central",
+    page_title="AIA Command Central",
     page_icon=":material/analytics:",
     layout="wide"
 )
@@ -25,7 +25,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title(":material/analytics: AIAA Command Central")
+st.title(":material/analytics: AIA Command Central")
 
 # Initialize session state
 if "global_data" not in st.session_state:
@@ -205,6 +205,25 @@ def load_aie_project_health():
         SELECT crm_account_id, zd_health_summary_c
         FROM ranked
         WHERE rn = 1
+        """
+        df = session.sql(query).to_pandas()
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
+@st.cache_data(ttl=3600)
+def load_integrated_cohort_overrides():
+    """
+    One row per CRM with manually-curated delay_code and Q2 target flag.
+    Sourced from STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.INTEGRATED_COHORT_OVERRIDES
+    which is loaded from a CSV upload — re-upload to the OVERRIDES_STAGE and
+    rebuild that table when the data changes.
+    """
+    try:
+        session = get_active_session()
+        query = """
+        SELECT crm_account_id, q2_target_account, delay_code
+        FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.INTEGRATED_COHORT_OVERRIDES
         """
         df = session.sql(query).to_pandas()
         return df, None
@@ -673,7 +692,7 @@ with st.sidebar:
 if st.session_state.global_data is None:
     # Welcome screen
     st.markdown("""
-    ## Welcome to AIAA Command Central Dashboard 🎯
+    ## Welcome to AIA Command Central Dashboard 🎯
 
     This dashboard automatically calculates all scorecard metrics from live Snowflake data, **matching the Excel formulas exactly**.
 
@@ -778,7 +797,7 @@ else:
     ])
 
     with tab1:
-        st.subheader("AIAA Command Central Scorecard")
+        st.subheader("AIA Command Central Scorecard")
 
         if len(scorecard_df) == 0:
             st.warning("No data available for the selected filters.")
@@ -1450,6 +1469,14 @@ else:
             "Replicates the Integrated Cohort List SQL: one row per instance for the selected snapshot date, "
             "ordered by cohort then ARR. AR / AR count / bot interactions are shown as both `_paid` and `_advanced` variants."
         )
+        st.warning(
+            "**Heads up — fields still being debugged:** the following columns currently show empty values "
+            "while we investigate a mart/dbt issue: `consultant_manager`, `first_instance_paid_activated_date`, "
+            "`first_instance_paid_adopted_date`, `first_instance_advanced_activated_date`, "
+            "`first_instance_advanced_adopted_date`, `first_crm_paid_activated_date`, `first_crm_paid_adopted_date`, "
+            "`first_crm_advanced_activated_date`, `first_crm_advanced_adopted_date`. All other columns are accurate.",
+            icon=":material/warning:",
+        )
 
         # Snapshot date selector — defaults to the latest available
         icl_dates = sorted(gdf['SOURCE_SNAPSHOT_DATE'].dropna().unique(), reverse=True)
@@ -1480,51 +1507,83 @@ else:
                 })[['CRM_ACCOUNT_ID', '__ZD_HEALTH_SUMMARY__']]
                 icl_df = icl_df.merge(aie_lookup, on='CRM_ACCOUNT_ID', how='left')
 
+            # Merge in manual delay_code and Q2 target overrides.
+            overrides_df, overrides_err = load_integrated_cohort_overrides()
+            if overrides_err or overrides_df is None:
+                st.caption(f"Could not load manual cohort overrides: {overrides_err}")
+                icl_df['__Q2_TARGET__'] = None
+                icl_df['__DELAY_CODE__'] = None
+            else:
+                overrides_lookup = overrides_df.rename(columns={
+                    'CRM_ACCOUNT_ID': 'CRM_ACCOUNT_ID',
+                    'Q2_TARGET_ACCOUNT': '__Q2_TARGET__',
+                    'DELAY_CODE': '__DELAY_CODE__',
+                })[['CRM_ACCOUNT_ID', '__Q2_TARGET__', '__DELAY_CODE__']]
+                icl_df = icl_df.merge(overrides_lookup, on='CRM_ACCOUNT_ID', how='left')
+
             # Column projection: (source_col_or_None, output_col_name)
-            # NULL placeholders for known gaps in the source SQL.
+            # NULL placeholders are used for fields not yet sourced from the mart;
+            # when the mart adds them we update the source column in place.
             column_map = [
-                ('SOURCE_SNAPSHOT_DATE',          'source_snapshot_date'),
-                ('INSTANCE_ACCOUNT_ID',           'instance_account_id'),
-                ('INSTANCE_ACCOUNT_SUBDOMAIN',    'instance_account_subdomain'),
-                ('CRM_ACCOUNT_ID',                'crm_account_id'),
-                ('CRM_ACCOUNT_NAME',              'crm_account_name'),
-                ('CRM_NET_ARR_USD',               'customer_net_arr_usd'),
-                ('CRM_ARR_BAND_BROAD',            'crm_arr_band'),
-                ('AI_ARR',                        'ai_arr'),
-                ('CRM_MARKET_SEGMENT',            'customer_segment'),
-                ('CRM_REGION',                    'region'),
-                ('CRM_SUB_REGION',                'subregion'),
-                ('CRM_INDUSTRY',                  'industry'),
-                ('CRM_MARKET_SUPER_SEGMENT',      'cs_segment'),
-                ('CRM_NEXT_RENEWAL_DATE',         'renewal_date'),
-                ('CRM_HEALTH_STATUS',             'crm_health_status'),
-                ('AI_EXPERT_FLAG',                'purchased_aie'),
-                ('CONSULTANT_NAME',               'consultant'),
-                (None,                            'consultant_manager'),               # GAP
-                ('SUBCO_ORGANIZATION',            'consultant_subcontractor_name'),
-                ('AI_STRATEGIST_NAME',            'strategist'),
-                ('AI_STRATEGIST_MANAGER_NAME',    'strategist_manager'),
-                ('THIRD_PARTY_AI_BOT',            'third_party_ai_bot'),
-                ('CURRENT_PHASE',                 'current_phase'),
-                ('COHORT',                        'usage_cohort_snapshot'),
-                (None,                            'current_quarter_adoption_target'),  # GAP
-                ('PROJECT_HEALTH',                'project_health'),
-                ('__ZD_HEALTH_SUMMARY__',         'project_health_summary'),
-                (None,                            'project_update'),                   # GAP
-                ('BOT_TYPE',                      'bot_type'),
-                ('PROJECTED_GO_LIVE_DATE',        'target_deploy_date'),
-                ('TARGET_DEPLOY_DATE_LAST_WEEK',  'targeted_deploy_last_week'),
-                ('ACTUAL_GO_LIVE_DATE',           'actual_deploy_date'),
-                (None,                            'delay_codes'),                      # GAP
-                ('ACTIVE_BOTS_28D_COUNT',         'num_bots_by_channel'),
-                (None,                            'num_use_cases'),                    # GAP
-                ('AR_RATE_PAID',                  'ar_rate_28d_paid'),
-                ('AR_RATE_ADVANCED',              'ar_rate_28d_advanced'),
-                ('AUTOMATED_RESOLUTIONS_PAID',    'num_automated_resolutions_28d_paid'),
-                ('AUTOMATED_RESOLUTIONS_ADVANCED','num_automated_resolutions_28d_advanced'),
-                ('BOT_INTERACTIONS_PAID',         'num_bot_interactions_28d_paid'),
-                ('BOT_INTERACTIONS_ADVANCED',     'num_bot_interactions_28d_advanced'),
-                ('TOP_BOX_PERCENTAGE',            'bsat_28d_top_box_pct'),
+                ('SOURCE_SNAPSHOT_DATE',                    'source_snapshot_date'),
+                ('INSTANCE_ACCOUNT_ID',                     'instance_account_id'),
+                ('INSTANCE_ACCOUNT_SUBDOMAIN',              'instance_account_subdomain'),
+                ('CRM_ACCOUNT_ID',                          'crm_account_id'),
+                ('CRM_ACCOUNT_NAME',                        'crm_account_name'),
+                ('CRM_NET_ARR_USD',                         'customer_net_arr_usd'),
+                ('CRM_ARR_BAND_BROAD',                      'crm_arr_band'),
+                ('AI_ARR',                                  'ai_arr'),
+                ('CRM_MARKET_SEGMENT',                      'customer_segment'),
+                ('CRM_REGION',                              'region'),
+                ('CRM_SUB_REGION',                          'subregion'),
+                ('CRM_INDUSTRY',                            'industry'),
+                ('CRM_MARKET_SUPER_SEGMENT',                'cs_segment'),
+                ('CRM_NEXT_RENEWAL_DATE',                   'renewal_date'),
+                ('CRM_HEALTH_STATUS',                       'crm_health_status'),
+                ('AI_EXPERT_FLAG',                          'purchased_aie'),
+                ('CRM_AI_EXPERT_SKU_SUBSCRIBED_START_DATE', 'aie_project_start_date'),
+                ('CONSULTANT_NAME',                         'consultant'),
+                ('CONSULTANT_MANAGER',                      'consultant_manager'),
+                ('SUBCO_ORGANIZATION',                      'consultant_subcontractor_name'),
+                ('AI_STRATEGIST_NAME',                      'strategist'),
+                ('AI_STRATEGIST_MANAGER_NAME',              'strategist_manager'),
+                ('THIRD_PARTY_AI_BOT',                      'third_party_ai_bot'),
+                ('CURRENT_PHASE',                           'current_phase'),
+                ('COHORT',                                  'usage_cohort_snapshot'),
+                ('MONTHLY_COHORT',                          'monthly_cohort'),
+                ('__Q2_TARGET__',                           'q2_target_account'),
+                ('PROJECT_HEALTH',                          'project_health'),
+                ('__ZD_HEALTH_SUMMARY__',                   'certinia_project_health_summary'),
+                ('BOT_TYPE',                                'bot_type'),
+                ('PROJECTED_GO_LIVE_DATE',                  'target_deploy_date'),
+                ('TARGET_DEPLOY_DATE_LAST_WEEK',            'targeted_deploy_last_week'),
+                ('ACTUAL_GO_LIVE_DATE',                     'actual_deploy_date'),
+                ('__DELAY_CODE__',                          'delay_codes'),
+                ('ACTIVE_BOTS_28D_COUNT',                   'num_bots_by_channel'),
+                (None,                                      'num_use_cases'),                    # GAP
+                ('AR_RATE_PAID',                            'ar_rate_28d_paid'),
+                ('AR_RATE_ADVANCED',                        'ar_rate_28d_advanced'),
+                ('AUTOMATED_RESOLUTIONS_PAID',              'num_automated_resolutions_28d_paid'),
+                ('AUTOMATED_RESOLUTIONS_ADVANCED',          'num_automated_resolutions_28d_advanced'),
+                ('BOT_INTERACTIONS_PAID',                   'num_bot_interactions_28d_paid'),
+                ('BOT_INTERACTIONS_ADVANCED',               'num_bot_interactions_28d_advanced'),
+                ('TOP_BOX_PERCENTAGE',                      'bsat_28d_top_box_pct'),
+                ('CRM_IS_AI_AGENTS_PAID_ACTIVATED',         'crm_paid_activated'),
+                ('CRM_IS_AI_AGENTS_PAID_ADOPTED',           'crm_paid_adopted'),
+                ('CRM_IS_AI_AGENTS_ADVANCED_ACTIVATED',     'crm_advanced_activated'),
+                ('CRM_IS_AI_AGENTS_ADVANCED_ADOPTED',       'crm_advanced_adopted'),
+                ('INSTANCE_IS_AI_AGENTS_PAID_ACTIVATED',    'instance_paid_activated'),
+                ('INSTANCE_IS_AI_AGENTS_PAID_ADOPTED',      'instance_paid_adopted'),
+                ('INSTANCE_IS_AI_AGENTS_ADVANCED_ACTIVATED','instance_advanced_activated'),
+                ('INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED',  'instance_advanced_adopted'),
+                ('FIRST_INSTANCE_PAID_ACTIVATED_DATE',      'first_instance_paid_activated_date'),
+                ('FIRST_ADOPTION_DATE_PAID',                'first_instance_paid_adopted_date'),
+                ('FIRST_INSTANCE_ADVANCED_ACTIVATED_DATE',  'first_instance_advanced_activated_date'),
+                ('FIRST_ADOPTION_DATE_ADVANCED',            'first_instance_advanced_adopted_date'),
+                ('FIRST_CRM_PAID_ACTIVATED_DATE',           'first_crm_paid_activated_date'),
+                ('FIRST_CRM_PAID_ADOPTED_DATE',             'first_crm_paid_adopted_date'),
+                ('FIRST_CRM_ADVANCED_ACTIVATED_DATE',       'first_crm_advanced_activated_date'),
+                ('FIRST_CRM_ADVANCED_ADOPTED_DATE',         'first_crm_advanced_adopted_date'),
             ]
 
             output = pd.DataFrame(index=icl_df.index)
@@ -1592,4 +1651,4 @@ else:
 
 # Footer
 st.divider()
-st.markdown("<div style='text-align: center; color: gray;'>AIAA Command Central • Formulas match Excel exactly</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: gray;'>AIA Command Central • Formulas match Excel exactly</div>", unsafe_allow_html=True)

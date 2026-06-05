@@ -4,6 +4,6 @@ streamlit:
   stage: streamlit
   database: STREAMLIT_APPS
   schema: AIAA_COMMAND_CENTRAL
-  title: "AIAA Command Central Dashboard"
+  title: "AIA Command Central Dashboard"
   query_warehouse: PUBLIC_ZENDESK_XS
   main_file: streamlit_app.py
