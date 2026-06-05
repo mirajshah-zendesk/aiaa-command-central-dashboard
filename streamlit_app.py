@@ -838,14 +838,15 @@ else:
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab5, tab_icl, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab_icl, tab6, tab7 = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
         ":material/warning: Adoption Loss",
         ":material/table: Data Explorer",
         ":material/list_alt: Integrated Cohort List",
-        ":material/info: Metrics Guide"
+        ":material/info: Metrics Guide",
+        ":material/rocket_launch: Kickoff Analysis"
     ])
 
     with tab1:
@@ -1861,6 +1862,326 @@ else:
         - Customer metrics: CRM_ACCOUNT_ID (one per CRM account)
         - Instance metrics: INSTANCE_ACCOUNT_ID (one per instance)
         """)
+
+    with tab7:
+        st.subheader(":material/rocket_launch: Kickoff Call Impact on Time-to-Value")
+        st.caption("Does earlier kickoff timing correlate with faster bot deployment and adoption?")
+
+        # Load kickoff analysis data
+        @st.cache_data(ttl=3600)
+        def load_kickoff_analysis():
+            """Load kickoff call data and join with time-to-value metrics"""
+            try:
+                session = get_active_session()
+
+                query = """
+                WITH kickoff_calls AS (
+                    SELECT
+                        aiaa.CRM_ACCOUNT_ID,
+                        aiaa.CRM_ACCOUNT_NAME,
+                        aiaa.INSTANCE_ACCOUNT_ID,
+                        aiaa.AIAA_START_DATE,
+                        aiaa.AI_EXPERT_FLAG,
+                        aiaa.CRM_REGION,
+                        aiaa.CRM_MARKET_SEGMENT,
+                        gc.call_date AS KICKOFF_CALL_DATE,
+                        DATEDIFF(day, aiaa.AIAA_START_DATE, gc.call_date) AS DAYS_TO_KICKOFF,
+                        gc.title AS CALL_TITLE,
+                        CASE
+                            WHEN LOWER(gc.title) LIKE '%kickoff%' THEN 100
+                            WHEN LOWER(gc.title) LIKE '%kick off%' THEN 100
+                            WHEN LOWER(gc.title) LIKE '%kick-off%' THEN 100
+                            WHEN LOWER(gc.title) LIKE '%onboarding%' THEN 90
+                            WHEN LOWER(gc.title) LIKE '%implementation%' THEN 85
+                            WHEN LOWER(gc.title) LIKE '%project start%' THEN 85
+                            WHEN LOWER(gc.title) LIKE '%getting started%' THEN 80
+                            ELSE 0
+                        END AS title_score,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY aiaa.CRM_ACCOUNT_ID
+                            ORDER BY
+                                CASE
+                                    WHEN LOWER(gc.title) LIKE '%kickoff%' THEN 100
+                                    WHEN LOWER(gc.title) LIKE '%kick off%' THEN 100
+                                    WHEN LOWER(gc.title) LIKE '%kick-off%' THEN 100
+                                    WHEN LOWER(gc.title) LIKE '%onboarding%' THEN 90
+                                    WHEN LOWER(gc.title) LIKE '%implementation%' THEN 85
+                                    WHEN LOWER(gc.title) LIKE '%project start%' THEN 85
+                                    WHEN LOWER(gc.title) LIKE '%getting started%' THEN 80
+                                    ELSE 0
+                                END DESC,
+                                gc.call_date ASC,
+                                DATEDIFF(day, aiaa.AIAA_START_DATE, gc.call_date) ASC
+                        ) AS kickoff_rank
+                    FROM (
+                        SELECT DISTINCT
+                            CRM_ACCOUNT_ID,
+                            CRM_ACCOUNT_NAME,
+                            INSTANCE_ACCOUNT_ID,
+                            AIAA_START_DATE,
+                            AI_EXPERT_FLAG,
+                            CRM_REGION,
+                            CRM_MARKET_SEGMENT
+                        FROM PRESENTATION.SUCCESS.AI_AGENTS_ADVANCED_COMMAND_CENTRAL
+                        WHERE INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED = 'TRUE'
+                            AND AIAA_START_DATE IS NOT NULL
+                            AND SOURCE_SNAPSHOT_DATE = (SELECT MAX(SOURCE_SNAPSHOT_DATE)
+                                                        FROM PRESENTATION.SUCCESS.AI_AGENTS_ADVANCED_COMMAND_CENTRAL)
+                    ) aiaa
+                    INNER JOIN FUNCTIONAL.CONVERGE.TRANSFORM_GONG_ACCOUNTS_MAP ga
+                        ON aiaa.CRM_ACCOUNT_ID = ga.crm_account_id
+                    INNER JOIN FUNCTIONAL.CONVERGE.UNIFIED_GONG_EVENTS gc
+                        ON ga.conversation_key = gc.conversation_key
+                    WHERE gc.call_date >= aiaa.AIAA_START_DATE
+                        AND gc.call_date <= DATEADD(day, 90, aiaa.AIAA_START_DATE)
+                ),
+                high_conf_kickoffs AS (
+                    SELECT *
+                    FROM kickoff_calls
+                    WHERE kickoff_rank = 1 AND title_score >= 80
+                ),
+                latest_metrics AS (
+                    SELECT
+                        CRM_ACCOUNT_ID,
+                        INSTANCE_ACCOUNT_ID,
+                        TIME_TO_DEPLOY_PAID,
+                        TIME_TO_ADOPT_PAID,
+                        FIRST_BOT_DEPLOYED_DATE_PAID,
+                        FIRST_ADOPTION_DATE_PAID,
+                        INSTANCE_IS_AI_AGENTS_ADVANCED_ACTIVATED,
+                        INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED
+                    FROM PRESENTATION.SUCCESS.AI_AGENTS_ADVANCED_COMMAND_CENTRAL
+                    WHERE SOURCE_SNAPSHOT_DATE = (SELECT MAX(SOURCE_SNAPSHOT_DATE)
+                                                   FROM PRESENTATION.SUCCESS.AI_AGENTS_ADVANCED_COMMAND_CENTRAL)
+                )
+                SELECT
+                    k.CRM_ACCOUNT_ID,
+                    k.CRM_ACCOUNT_NAME,
+                    k.INSTANCE_ACCOUNT_ID,
+                    k.AIAA_START_DATE,
+                    k.KICKOFF_CALL_DATE,
+                    k.DAYS_TO_KICKOFF,
+                    k.CALL_TITLE,
+                    k.AI_EXPERT_FLAG,
+                    k.CRM_REGION,
+                    k.CRM_MARKET_SEGMENT,
+                    m.TIME_TO_DEPLOY_PAID,
+                    m.TIME_TO_ADOPT_PAID,
+                    m.FIRST_BOT_DEPLOYED_DATE_PAID,
+                    m.FIRST_ADOPTION_DATE_PAID,
+                    m.INSTANCE_IS_AI_AGENTS_ADVANCED_ACTIVATED,
+                    m.INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED,
+                    CASE
+                        WHEN m.FIRST_BOT_DEPLOYED_DATE_PAID IS NOT NULL
+                            THEN DATEDIFF(day, k.KICKOFF_CALL_DATE, m.FIRST_BOT_DEPLOYED_DATE_PAID)
+                    END AS DAYS_KICKOFF_TO_BOT,
+                    CASE
+                        WHEN m.FIRST_ADOPTION_DATE_PAID IS NOT NULL
+                            THEN DATEDIFF(day, k.KICKOFF_CALL_DATE, m.FIRST_ADOPTION_DATE_PAID)
+                    END AS DAYS_KICKOFF_TO_ADOPTION,
+                    CASE
+                        WHEN k.DAYS_TO_KICKOFF <= 7 THEN '1. Within 1 week'
+                        WHEN k.DAYS_TO_KICKOFF <= 14 THEN '2. Within 2 weeks'
+                        WHEN k.DAYS_TO_KICKOFF <= 30 THEN '3. Within 1 month'
+                        WHEN k.DAYS_TO_KICKOFF <= 60 THEN '4. Within 2 months'
+                        ELSE '5. After 2 months'
+                    END AS KICKOFF_TIMING_BUCKET
+                FROM high_conf_kickoffs k
+                LEFT JOIN latest_metrics m
+                    ON k.CRM_ACCOUNT_ID = m.CRM_ACCOUNT_ID
+                    AND k.INSTANCE_ACCOUNT_ID = m.INSTANCE_ACCOUNT_ID
+                """
+
+                df = session.sql(query).to_pandas()
+                return df, None
+            except Exception as e:
+                return None, str(e)
+
+        kickoff_df, error = load_kickoff_analysis()
+
+        if error:
+            st.error(f"Error loading kickoff analysis data: {error}")
+        elif kickoff_df is None or len(kickoff_df) == 0:
+            st.warning("No kickoff call data available.")
+        else:
+            # Key insights at the top
+            st.markdown("### 🎯 Key Insight")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric(
+                    "Total Accounts with Kickoffs",
+                    f"{len(kickoff_df):,}",
+                    help="Accounts with high-confidence kickoff calls identified"
+                )
+
+            with col2:
+                optimal_window = kickoff_df[kickoff_df['KICKOFF_TIMING_BUCKET'] == '2. Within 2 weeks']
+                if len(optimal_window) > 0:
+                    median_adopt = optimal_window['TIME_TO_ADOPT_PAID'].median()
+                    st.metric(
+                        "Optimal Window: 7-14 Days",
+                        f"{median_adopt:.0f} days" if pd.notna(median_adopt) else "N/A",
+                        help="Median time to adoption for kickoffs in weeks 2"
+                    )
+
+            with col3:
+                activated_pct = (kickoff_df['INSTANCE_IS_AI_AGENTS_ADVANCED_ACTIVATED'] == 'TRUE').sum() / len(kickoff_df) * 100
+                st.metric(
+                    "Activation Rate",
+                    f"{activated_pct:.1f}%",
+                    help="% of accounts with kickoffs that activated"
+                )
+
+            st.divider()
+
+            # Summary statistics by timing bucket
+            st.markdown("### 📊 Impact of Kickoff Timing on Time-to-Value")
+
+            summary_stats = kickoff_df.groupby('KICKOFF_TIMING_BUCKET').agg({
+                'CRM_ACCOUNT_ID': 'count',
+                'DAYS_TO_KICKOFF': ['median'],
+                'TIME_TO_ADOPT_PAID': ['median', 'mean'],
+                'INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED': lambda x: (x == 'TRUE').sum() / len(x) * 100
+            }).reset_index()
+
+            summary_stats.columns = [
+                'Kickoff Timing', 'Accounts',
+                'Median Days to Kickoff',
+                'Median Time to Adopt', 'Avg Time to Adopt',
+                'Adoption Rate %'
+            ]
+
+            # Calculate accounts adopted count
+            adopted_counts = kickoff_df.groupby('KICKOFF_TIMING_BUCKET').apply(
+                lambda x: (x['INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED'] == 'TRUE').sum()
+            ).reset_index(name='Accounts Adopted')
+
+            summary_stats = summary_stats.merge(adopted_counts, on='Kickoff Timing')
+
+            # Display summary table
+            st.dataframe(
+                summary_stats.style.format({
+                    'Accounts': '{:.0f}',
+                    'Accounts Adopted': '{:.0f}',
+                    'Median Days to Kickoff': '{:.1f}',
+                    'Median Time to Adopt': '{:.0f}',
+                    'Avg Time to Adopt': '{:.1f}',
+                    'Adoption Rate %': '{:.1f}%'
+                }).background_gradient(
+                    subset=['Median Time to Adopt'],
+                    cmap='RdYlGn_r',
+                    vmin=40,
+                    vmax=120
+                ),
+                use_container_width=True
+            )
+
+            st.markdown("""
+            **💡 Interpretation Guide:**
+            - **Median Time to Adopt**: Days from AIAA start to adoption (lower is better)
+            - **Highlighted cells**: Green = faster time to adoption, Red = slower
+            - **Adoption Rate %**: Percentage of accounts that achieved adoption
+            """)
+
+            st.divider()
+
+            # Visualization: Focus on adoption only
+            st.markdown("### 🎯 Time to Adoption by Kickoff Timing")
+
+            import plotly.express as px
+
+            # Box plot for time to adopt
+            fig_adopt = px.box(
+                kickoff_df.dropna(subset=['TIME_TO_ADOPT_PAID']),
+                x='KICKOFF_TIMING_BUCKET',
+                y='TIME_TO_ADOPT_PAID',
+                color='KICKOFF_TIMING_BUCKET',
+                labels={
+                    'KICKOFF_TIMING_BUCKET': 'Kickoff Timing',
+                    'TIME_TO_ADOPT_PAID': 'Days to Adoption'
+                },
+                color_discrete_sequence=px.colors.sequential.Greens_r
+            )
+            fig_adopt.update_layout(
+                showlegend=False,
+                xaxis_title="Kickoff Timing Window",
+                yaxis_title="Days from AIAA Start to Adoption",
+                height=500
+            )
+            fig_adopt.update_xaxes(tickangle=-45)
+            st.plotly_chart(fig_adopt, use_container_width=True)
+
+            st.info("""
+            **📊 What the box plot shows:**
+            - **Box**: Middle 50% of accounts (25th to 75th percentile)
+            - **Line in box**: Median time to adoption
+            - **Whiskers**: Range excluding outliers
+            - **Dots**: Outlier accounts (unusually fast or slow)
+            """)
+
+            st.divider()
+
+            # Account-level explorer
+            with st.expander("📋 Account-Level Data Explorer"):
+                st.markdown("Filter and explore individual account kickoff data")
+
+                # Filters
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    selected_regions = st.multiselect(
+                        "Region",
+                        options=sorted(kickoff_df['CRM_REGION'].dropna().unique()),
+                        key="kickoff_region_filter"
+                    )
+
+                with col2:
+                    selected_ai_expert = st.multiselect(
+                        "AI Expert",
+                        options=sorted(kickoff_df['AI_EXPERT_FLAG'].dropna().unique()),
+                        key="kickoff_ai_expert_filter"
+                    )
+
+                with col3:
+                    selected_timing = st.multiselect(
+                        "Kickoff Timing",
+                        options=sorted(kickoff_df['KICKOFF_TIMING_BUCKET'].unique()),
+                        key="kickoff_timing_filter"
+                    )
+
+                # Apply filters
+                filtered_kickoff_df = kickoff_df.copy()
+                if selected_regions:
+                    filtered_kickoff_df = filtered_kickoff_df[filtered_kickoff_df['CRM_REGION'].isin(selected_regions)]
+                if selected_ai_expert:
+                    filtered_kickoff_df = filtered_kickoff_df[filtered_kickoff_df['AI_EXPERT_FLAG'].isin(selected_ai_expert)]
+                if selected_timing:
+                    filtered_kickoff_df = filtered_kickoff_df[filtered_kickoff_df['KICKOFF_TIMING_BUCKET'].isin(selected_timing)]
+
+                # Display columns
+                display_cols = [
+                    'CRM_ACCOUNT_NAME', 'CRM_REGION', 'AI_EXPERT_FLAG',
+                    'KICKOFF_TIMING_BUCKET',
+                    'DAYS_TO_KICKOFF', 'TIME_TO_ADOPT_PAID',
+                    'INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED',
+                    'CALL_TITLE'
+                ]
+
+                st.dataframe(
+                    filtered_kickoff_df[display_cols].sort_values('DAYS_TO_KICKOFF'),
+                    use_container_width=True,
+                    height=400
+                )
+
+                # Download button
+                st.download_button(
+                    label=":material/download: Download Kickoff Analysis Data (CSV)",
+                    data=filtered_kickoff_df.to_csv(index=False).encode('utf-8'),
+                    file_name=f"kickoff_analysis_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
 
 # Footer
 st.divider()
