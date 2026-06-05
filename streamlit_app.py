@@ -211,6 +211,58 @@ def load_aie_project_health():
     except Exception as e:
         return None, str(e)
 
+def load_icl_notes(snapshot_date):
+    """All ICL notes for a given snapshot date — one row per instance."""
+    try:
+        session = get_active_session()
+        snapshot_date_str = pd.Timestamp(snapshot_date).strftime('%Y-%m-%d')
+        df = session.sql(f"""
+            SELECT instance_account_id, note, updated_by, updated_at
+            FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ICL_NOTES
+            WHERE snapshot_date = '{snapshot_date_str}'::DATE
+        """).to_pandas()
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
+def upsert_icl_note(instance_account_id, snapshot_date, note, user_email):
+    """Insert or update a single ICL note."""
+    try:
+        session = get_active_session()
+        snapshot_date_str = pd.Timestamp(snapshot_date).strftime('%Y-%m-%d')
+        # MERGE pattern: emulate UPSERT.
+        check = session.sql(f"""
+            SELECT COUNT(*) AS cnt
+            FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ICL_NOTES
+            WHERE instance_account_id = '{instance_account_id}'
+              AND snapshot_date = '{snapshot_date_str}'::DATE
+        """).collect()
+        exists = check[0]['CNT'] > 0
+        if exists:
+            session.sql(f"""
+                UPDATE STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ICL_NOTES
+                SET note = $${note}$$,
+                    updated_by = '{user_email}',
+                    updated_at = CURRENT_TIMESTAMP()
+                WHERE instance_account_id = '{instance_account_id}'
+                  AND snapshot_date = '{snapshot_date_str}'::DATE
+            """).collect()
+        else:
+            session.sql(f"""
+                INSERT INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.ICL_NOTES
+                  (instance_account_id, snapshot_date, note, updated_by, updated_at)
+                VALUES (
+                    '{instance_account_id}',
+                    '{snapshot_date_str}'::DATE,
+                    $${note}$$,
+                    '{user_email}',
+                    CURRENT_TIMESTAMP()
+                )
+            """).collect()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
 @st.cache_data(ttl=3600)
 def load_integrated_cohort_overrides():
     """
@@ -1694,8 +1746,81 @@ else:
                 output = output[mask]
                 st.caption(f"Matched {len(output):,} rows across {', '.join(icl_search_fields)}.")
 
+            # Merge in shared notes for this snapshot date.
+            notes_df, notes_err = load_icl_notes(icl_date)
+            if notes_err:
+                st.caption(f"Could not load notes: {notes_err}")
+                output['notes'] = ''
+                output['last_edited'] = ''
+            else:
+                if notes_df is None or len(notes_df) == 0:
+                    notes_lookup = pd.DataFrame(columns=['INSTANCE_ACCOUNT_ID', 'NOTE', 'UPDATED_BY', 'UPDATED_AT'])
+                else:
+                    notes_lookup = notes_df.copy()
+                notes_lookup['__last_edited__'] = notes_lookup.apply(
+                    lambda r: f"{r['UPDATED_BY']} · {pd.Timestamp(r['UPDATED_AT']).strftime('%Y-%m-%d %H:%M')}"
+                    if pd.notna(r.get('UPDATED_AT')) else '',
+                    axis=1,
+                )
+                merged_notes = notes_lookup.rename(columns={
+                    'INSTANCE_ACCOUNT_ID': 'instance_account_id',
+                    'NOTE': 'notes',
+                    '__last_edited__': 'last_edited',
+                })[['instance_account_id', 'notes', 'last_edited']]
+                output = output.merge(merged_notes, on='instance_account_id', how='left')
+                output['notes'] = output['notes'].fillna('')
+                output['last_edited'] = output['last_edited'].fillna('')
+
             st.markdown(f"**Rows:** {len(output):,}")
-            st.dataframe(output, use_container_width=True, height=600)
+            st.caption("Edit the **notes** column inline — changes save to a shared table and are visible to other users.")
+
+            try:
+                current_user = get_active_session().sql("SELECT CURRENT_USER()").collect()[0][0]
+            except Exception:
+                current_user = 'unknown_user'
+
+            # Build column_config — notes editable, last_edited read-only,
+            # everything else read-only too (data_editor edits everything by default).
+            column_config = {
+                'notes': st.column_config.TextColumn(
+                    'notes',
+                    help='Click a cell to add or edit a shared note for this row.',
+                    width='medium',
+                ),
+                'last_edited': st.column_config.TextColumn(
+                    'last_edited',
+                    help='Most recent author and edit time.',
+                    disabled=True,
+                ),
+            }
+            for col in output.columns:
+                if col not in ('notes',):
+                    column_config.setdefault(col, st.column_config.Column(disabled=True))
+
+            edited = st.data_editor(
+                output,
+                use_container_width=True,
+                height=600,
+                column_config=column_config,
+                hide_index=True,
+                key=f"icl_editor_{pd.Timestamp(icl_date).strftime('%Y%m%d')}",
+            )
+
+            # Detect note changes and persist them.
+            try:
+                before = output.set_index('instance_account_id')['notes'].fillna('')
+                after = edited.set_index('instance_account_id')['notes'].fillna('')
+                changed_ids = before.index[before.values != after.reindex(before.index).values]
+                for iac in changed_ids:
+                    new_text = after.loc[iac]
+                    ok, err = upsert_icl_note(str(iac), icl_date, str(new_text), current_user)
+                    if not ok:
+                        st.error(f"Failed to save note for instance {iac}: {err}")
+                if len(changed_ids) > 0:
+                    load_icl_notes.clear() if hasattr(load_icl_notes, 'clear') else None
+                    st.success(f"Saved {len(changed_ids)} note update(s).")
+            except Exception as e:
+                st.warning(f"Note persistence failed: {e}")
 
             st.download_button(
                 label=":material/download: Download Integrated Cohort List (CSV)",
