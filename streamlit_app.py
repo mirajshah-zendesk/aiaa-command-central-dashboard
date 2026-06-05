@@ -1330,7 +1330,7 @@ else:
                     # Merge notes into the dataframe
                     lost_df['Notes'] = lost_df['CRM_ACCOUNT_ID'].map(notes_dict).fillna('')
 
-                    # Reorder columns
+                    # Reorder columns (keep IDs for internal use but not display)
                     column_order = [
                         'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN',
                         'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
@@ -1346,8 +1346,14 @@ else:
                     lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
                     lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    # Keep all columns for display (including instance info)
-                    st.dataframe(lost_df_display, use_container_width=True, height=400)
+                    # Select columns for display (remove CRM_ACCOUNT_ID and INSTANCE_ACCOUNT_ID)
+                    display_columns = [
+                        'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
+                        'CRM_REGION', 'CRM_ARR_BAND_BROAD', 'CRM_MARKET_SEGMENT',
+                        'Current AR Rate', 'Previous AR Rate',
+                        'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
+                    ]
+                    st.dataframe(lost_df_display[display_columns], use_container_width=True, height=400, hide_index=True)
 
                     # Add notes input section
                     st.markdown("#### 📝 Add/Edit Notes")
