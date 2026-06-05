@@ -1610,6 +1610,19 @@ else:
             if missing_cols:
                 st.warning(f"Columns missing from mart (filled with NULL): {', '.join(missing_cols)}")
 
+            icl_date_str = pd.Timestamp(icl_date).strftime('%Y-%m-%d')
+            usage_cohort_label = f"Usage Cohort Snapshot ({icl_date_str})"
+
+            def _sort_monthly_cohort(values):
+                # "Apr 2026", "May 2026" -> chronological order. Unparseable
+                # values (e.g. None) sort last alphabetically.
+                def key(v):
+                    try:
+                        return (0, pd.to_datetime(v, format='%b %Y'))
+                    except (ValueError, TypeError):
+                        return (1, str(v))
+                return sorted(values, key=key)
+
             with st.expander(":material/filter_alt: Filters", expanded=False):
                 def _multi_options(col):
                     if col not in output.columns:
@@ -1618,8 +1631,8 @@ else:
 
                 f1, f2, f3 = st.columns(3)
                 with f1:
-                    sel_cohort = st.multiselect("Cohort", _multi_options('usage_cohort_snapshot'), key='icl_f_cohort')
-                    sel_monthly = st.multiselect("Monthly cohort", _multi_options('monthly_cohort'), key='icl_f_monthly')
+                    sel_cohort = st.multiselect(usage_cohort_label, _multi_options('usage_cohort_snapshot'), key='icl_f_cohort')
+                    sel_monthly = st.multiselect("Monthly cohort", _sort_monthly_cohort([v for v in output['monthly_cohort'].dropna().unique().tolist()]) if 'monthly_cohort' in output.columns else [], key='icl_f_monthly')
                     sel_phase = st.multiselect("Current phase", _multi_options('current_phase'), key='icl_f_phase')
                 with f2:
                     sel_health = st.multiselect("Project health", _multi_options('project_health'), key='icl_f_health')
@@ -1628,13 +1641,21 @@ else:
                 with f3:
                     sel_strat_mgr = st.multiselect("Strategist manager", _multi_options('strategist_manager'), key='icl_f_strat_mgr')
                     sel_q2 = st.radio("Q2 Target Account", ['All', 'Yes', 'No / blank'], horizontal=True, key='icl_f_q2')
-                    sel_activated = st.radio("Instance paid activated", ['All', 'True', 'False'], horizontal=True, key='icl_f_activated')
-                    sel_adopted = st.radio("Instance paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_adopted')
+                    sel_inst_paid_adp = st.radio("Instance paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_inst_paid_adp')
+                    sel_inst_adv_adp = st.radio("Instance advanced adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_inst_adv_adp')
+                    sel_crm_paid_adp = st.radio("CRM paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_crm_paid_adp')
+                    sel_crm_adv_adp = st.radio("CRM advanced adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_crm_adv_adp')
 
             def _apply_multi(df, col, selected):
                 if not selected or col not in df.columns:
                     return df
                 return df[df[col].isin(selected)]
+
+            def _apply_bool_radio(df, col, choice):
+                if choice == 'All' or col not in df.columns:
+                    return df
+                want = choice == 'True'
+                return df[df[col] == want]
 
             output = _apply_multi(output, 'usage_cohort_snapshot', sel_cohort)
             output = _apply_multi(output, 'monthly_cohort', sel_monthly)
@@ -1649,12 +1670,14 @@ else:
             elif sel_q2 == 'No / blank' and 'q2_target_account' in output.columns:
                 output = output[output['q2_target_account'] != 'Yes']
 
-            if sel_activated != 'All' and 'instance_paid_activated' in output.columns:
-                want = sel_activated == 'True'
-                output = output[output['instance_paid_activated'] == want]
-            if sel_adopted != 'All' and 'instance_paid_adopted' in output.columns:
-                want = sel_adopted == 'True'
-                output = output[output['instance_paid_adopted'] == want]
+            output = _apply_bool_radio(output, 'instance_paid_adopted', sel_inst_paid_adp)
+            output = _apply_bool_radio(output, 'instance_advanced_adopted', sel_inst_adv_adp)
+            output = _apply_bool_radio(output, 'crm_paid_adopted', sel_crm_paid_adp)
+            output = _apply_bool_radio(output, 'crm_advanced_adopted', sel_crm_adv_adp)
+
+            # Rename the column for display now that filtering has finished.
+            if 'usage_cohort_snapshot' in output.columns:
+                output = output.rename(columns={'usage_cohort_snapshot': usage_cohort_label})
 
             icl_search_fields = [c for c in ('crm_account_id', 'crm_account_name', 'instance_account_id', 'instance_account_subdomain') if c in output.columns]
             icl_search_term = st.text_input(
