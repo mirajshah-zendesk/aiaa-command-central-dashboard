@@ -2078,44 +2078,6 @@ else:
                 mime="text/csv"
             )
 
-            st.divider()
-
-            # Visualization: Focus on adoption only
-            st.markdown("### 🎯 Time to Adoption by Kickoff Timing")
-
-            import plotly.express as px
-
-            # Box plot for time to adopt
-            fig_adopt = px.box(
-                kickoff_df.dropna(subset=['TIME_TO_ADOPT_PAID']),
-                x='KICKOFF_TIMING_BUCKET',
-                y='TIME_TO_ADOPT_PAID',
-                color='KICKOFF_TIMING_BUCKET',
-                labels={
-                    'KICKOFF_TIMING_BUCKET': 'Kickoff Timing',
-                    'TIME_TO_ADOPT_PAID': 'Days to Adoption'
-                },
-                color_discrete_sequence=px.colors.sequential.Greens_r
-            )
-            fig_adopt.update_layout(
-                showlegend=False,
-                xaxis_title="Kickoff Timing Window",
-                yaxis_title="Days from AIAA Start to Adoption",
-                height=500
-            )
-            fig_adopt.update_xaxes(tickangle=-45)
-            st.plotly_chart(fig_adopt, use_container_width=True)
-
-            st.info("""
-            **📊 What the box plot shows:**
-            - **Box**: Middle 50% of accounts (25th to 75th percentile)
-            - **Line in box**: Median time to adoption
-            - **Whiskers**: Range excluding outliers
-            - **Dots**: Outlier accounts (unusually fast or slow)
-            """)
-
-            st.divider()
-
             # Account-level explorer
             with st.expander("📋 Account-Level Data Explorer"):
                 st.markdown("Filter and explore individual account kickoff data")
