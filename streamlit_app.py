@@ -1553,15 +1553,6 @@ else:
             "Replicates the Integrated Cohort List SQL: one row per instance for the selected snapshot date, "
             "ordered by cohort then ARR. AR / AR count / AI Agent interactions are shown as both `_paid` and `_advanced` variants."
         )
-        st.warning(
-            "**Heads up — fields still being debugged:** the following columns currently show empty values "
-            "while we investigate a mart/dbt issue: `consultant_manager`, `first_instance_paid_activated_date`, "
-            "`first_instance_advanced_activated_date`, `first_crm_paid_activated_date`, "
-            "`first_crm_paid_adopted_date`, `first_crm_advanced_activated_date`, `first_crm_advanced_adopted_date`. "
-            "The `first_instance_*_adopted_date` columns work — they reuse a pre-existing mart field. "
-            "All other columns are accurate.",
-            icon=":material/warning:",
-        )
 
         # Snapshot date selector — defaults to the latest available
         icl_dates = sorted(gdf['SOURCE_SNAPSHOT_DATE'].dropna().unique(), reverse=True)
