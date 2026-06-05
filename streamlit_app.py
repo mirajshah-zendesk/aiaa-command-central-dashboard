@@ -1375,8 +1375,8 @@ else:
                     except:
                         current_user = "unknown_user"
 
-                    # Customer selector
-                    customer_names = lost_df[['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN']].values.tolist()
+                    # Customer selector (use renamed column names)
+                    customer_names = lost_df[['CRM_ACCOUNT_ID', 'Account', 'INSTANCE_ACCOUNT_ID', 'Instance']].values.tolist()
                     customer_display = [f"{name}" for id, name, inst_id, inst_name in customer_names]
                     customer_map = {f"{name}": (id, inst_id, inst_name) for id, name, inst_id, inst_name in customer_names}
 
