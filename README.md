@@ -11,6 +11,7 @@ A Snowflake-native Streamlit dashboard that replicates the AIAA Command Central 
 - **Bot Deployment**: Bot deployment stats, Gen2/Gen3 classification
 - **BSAT Scores**: Top box satisfaction tracking
 - **Go-Live Tracking**: Actual and projected go-live metrics
+- **Kickoff Analysis**: Analyzes impact of kickoff call timing on time-to-value metrics
 - **Interactive Filters**: Date range and region filtering
 
 ## Setup
@@ -29,15 +30,20 @@ uv sync
 This dashboard is designed to run in Snowflake Streamlit. Deploy using:
 
 ```bash
-snow streamlit deploy --replace
+./deploy.sh
 ```
 
-Or via Snowsight:
-1. Navigate to Streamlit in Snowflake
-2. Create new Streamlit app
-3. Upload `streamlit_app.py`
-4. Set database: `PRESENTATION`, schema: `INSIGHTS`
-5. Set warehouse: `PUBLIC_ZENDESK_XS`
+Or manually:
+```bash
+snow streamlit deploy --replace \
+  --connection ZENDESK-GLOBAL \
+  --database STREAMLIT_APPS \
+  --schema AIAA_COMMAND_CENTRAL \
+  --role STREAMLIT_APP_ADMIN_ROLE
+```
+
+The app is deployed to:
+https://app.snowflake.com/ZENDESK/global/#/streamlit-apps/STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.AIAA_COMMAND_CENTRAL_DASHBOARD
 
 ## Running the Dashboard
 
@@ -59,11 +65,15 @@ Note: Local mode requires Snowflake credentials and access to `presentation.succ
 3. Data is cached for 1 hour for performance
 
 ### Dashboard Tabs
-The dashboard shows all metrics in a single comprehensive view:
-- **Weekly metrics table**: All KPIs by week
-- **Trend visualizations**: Line charts showing metric evolution over time
-- **Additional filters**: Date range, region selection
-- **Raw data view**: Inspect underlying data
+The dashboard has 8 comprehensive tabs:
+1. **📊 Scorecard**: Weekly metrics table with all KPIs
+2. **📈 Trends**: Line charts showing metric evolution over time
+3. **👥 Cohort Analysis**: Cohort-based adoption and usage patterns
+4. **⚠️ Adoption Loss**: Track and annotate accounts losing adoption
+5. **📋 Data Explorer**: Inspect and search underlying data
+6. **📑 Integrated Cohort List**: Full customer list with project health scores
+7. **ℹ️ Metrics Guide**: Documentation on metric calculations
+8. **🚀 Kickoff Analysis**: Impact of kickoff call timing on time-to-value (activation & adoption)
 
 ### Key Metrics Displayed
 
@@ -98,9 +108,13 @@ Root cause: CSV export was a static snapshot while Excel connects to live data. 
 
 ## Dependencies
 
-- `snowflake-snowpark-python>=1.11.0` - Snowflake integration
-- `streamlit>=1.53.0` - Dashboard framework
-- `pandas` - Data manipulation (included with Streamlit)
+Defined in `environment.yml` for Snowflake Streamlit deployment:
+- `streamlit` - Dashboard framework
+- `pandas` - Data manipulation
+- `numpy` - Numerical computations
+- `snowflake-snowpark-python` - Snowflake integration
+- `matplotlib` - Plotting (optional, not fully supported in Snowflake environment)
+- `plotly` - Interactive visualizations (optional, not fully supported in Snowflake environment)
 
 ## Troubleshooting
 
