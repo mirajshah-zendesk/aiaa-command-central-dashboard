@@ -298,7 +298,7 @@ SPIFF_EXCLUDED_NAMES = {
 }
 
 @st.cache_data(ttl=300)
-def load_spiff_team_mapping(_v=2):
+def load_spiff_team_mapping(_v=3):
     """One row per person with their team and role (AI Strategist or AI Consultant).
 
     The _v param is a cache-buster: bump when the underlying table changes.
