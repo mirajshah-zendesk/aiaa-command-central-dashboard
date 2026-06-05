@@ -297,16 +297,22 @@ SPIFF_EXCLUDED_NAMES = {
     'Gustavo Prezoto',
 }
 
-@st.cache_data(ttl=3600)
-def load_spiff_team_mapping():
-    """One row per person with their team and role (AI Strategist or AI Consultant)."""
+@st.cache_data(ttl=300)
+def load_spiff_team_mapping(_v=2):
+    """One row per person with their team and role (AI Strategist or AI Consultant).
+
+    The _v param is a cache-buster: bump when the underlying table changes.
+    """
     try:
         session = get_active_session()
         query = """
         SELECT full_name, team, role
         FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.SPIFF_TEAM_MAPPING
+        WHERE full_name IS NOT NULL
         """
         df = session.sql(query).to_pandas()
+        # Defensive: ensure column names are uppercase (Snowflake default).
+        df.columns = [c.upper() for c in df.columns]
         return df, None
     except Exception as e:
         return None, str(e)
@@ -2166,7 +2172,7 @@ else:
             st.warning("No data loaded yet.")
         else:
             latest_snap = spiff_source['SOURCE_SNAPSHOT_DATE'].max()
-            st.markdown(f"**Last updated:** {pd.Timestamp(latest_snap).strftime('%Y-%m-%d')} (latest mart snapshot)")
+            st.markdown(f"**Last updated:** {pd.Timestamp(latest_snap).strftime('%Y-%m-%d')}")
             spiff_latest = spiff_source[spiff_source['SOURCE_SNAPSHOT_DATE'] == latest_snap].copy()
             spiff_latest = spiff_latest[spiff_latest['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True].copy()
 
@@ -2200,6 +2206,13 @@ else:
             team_df, team_err = load_spiff_team_mapping()
             if team_err or team_df is None:
                 st.error(f"Could not load team mapping: {team_err}")
+                team_df = pd.DataFrame(columns=['FULL_NAME', 'TEAM', 'ROLE'])
+            elif len(team_df) == 0 or team_df['FULL_NAME'].notna().sum() == 0:
+                st.error(
+                    "Team mapping table loaded but contains no usable rows. "
+                    "Check `STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.SPIFF_TEAM_MAPPING` "
+                    "and re-run the CTAS rebuild from the stage."
+                )
                 team_df = pd.DataFrame(columns=['FULL_NAME', 'TEAM', 'ROLE'])
 
             consultant_team = dict(zip(
