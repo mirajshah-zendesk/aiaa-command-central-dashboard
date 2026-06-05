@@ -1610,6 +1610,52 @@ else:
             if missing_cols:
                 st.warning(f"Columns missing from mart (filled with NULL): {', '.join(missing_cols)}")
 
+            with st.expander(":material/filter_alt: Filters", expanded=False):
+                def _multi_options(col):
+                    if col not in output.columns:
+                        return []
+                    return sorted([v for v in output[col].dropna().unique().tolist()])
+
+                f1, f2, f3 = st.columns(3)
+                with f1:
+                    sel_cohort = st.multiselect("Cohort", _multi_options('usage_cohort_snapshot'), key='icl_f_cohort')
+                    sel_monthly = st.multiselect("Monthly cohort", _multi_options('monthly_cohort'), key='icl_f_monthly')
+                    sel_phase = st.multiselect("Current phase", _multi_options('current_phase'), key='icl_f_phase')
+                with f2:
+                    sel_health = st.multiselect("Project health", _multi_options('project_health'), key='icl_f_health')
+                    sel_consultant = st.multiselect("Consultant", _multi_options('consultant'), key='icl_f_consultant')
+                    sel_strategist = st.multiselect("Strategist", _multi_options('strategist'), key='icl_f_strategist')
+                with f3:
+                    sel_strat_mgr = st.multiselect("Strategist manager", _multi_options('strategist_manager'), key='icl_f_strat_mgr')
+                    sel_q2 = st.radio("Q2 Target Account", ['All', 'Yes', 'No / blank'], horizontal=True, key='icl_f_q2')
+                    sel_activated = st.radio("Instance paid activated", ['All', 'True', 'False'], horizontal=True, key='icl_f_activated')
+                    sel_adopted = st.radio("Instance paid adopted", ['All', 'True', 'False'], horizontal=True, key='icl_f_adopted')
+
+            def _apply_multi(df, col, selected):
+                if not selected or col not in df.columns:
+                    return df
+                return df[df[col].isin(selected)]
+
+            output = _apply_multi(output, 'usage_cohort_snapshot', sel_cohort)
+            output = _apply_multi(output, 'monthly_cohort', sel_monthly)
+            output = _apply_multi(output, 'current_phase', sel_phase)
+            output = _apply_multi(output, 'project_health', sel_health)
+            output = _apply_multi(output, 'consultant', sel_consultant)
+            output = _apply_multi(output, 'strategist', sel_strategist)
+            output = _apply_multi(output, 'strategist_manager', sel_strat_mgr)
+
+            if sel_q2 == 'Yes' and 'q2_target_account' in output.columns:
+                output = output[output['q2_target_account'] == 'Yes']
+            elif sel_q2 == 'No / blank' and 'q2_target_account' in output.columns:
+                output = output[output['q2_target_account'] != 'Yes']
+
+            if sel_activated != 'All' and 'instance_paid_activated' in output.columns:
+                want = sel_activated == 'True'
+                output = output[output['instance_paid_activated'] == want]
+            if sel_adopted != 'All' and 'instance_paid_adopted' in output.columns:
+                want = sel_adopted == 'True'
+                output = output[output['instance_paid_adopted'] == want]
+
             icl_search_fields = [c for c in ('crm_account_id', 'crm_account_name', 'instance_account_id', 'instance_account_subdomain') if c in output.columns]
             icl_search_term = st.text_input(
                 "Search account",
