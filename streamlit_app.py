@@ -2042,34 +2042,21 @@ else:
             summary_stats = kickoff_df.groupby('KICKOFF_TIMING_BUCKET').agg({
                 'CRM_ACCOUNT_ID': 'count',
                 'DAYS_TO_KICKOFF': ['median'],
-                'TIME_TO_ADOPT_PAID': ['median', 'mean'],
-                'INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED': lambda x: (x == 'TRUE').sum() / len(x) * 100
+                'TIME_TO_ADOPT_PAID': ['median']
             }).reset_index()
 
             summary_stats.columns = [
                 'Kickoff Timing', 'Accounts',
                 'Median Days to Kickoff',
-                'Median Time to Adopt', 'Avg Time to Adopt',
-                'Adoption Rate %'
+                'Median Time to Adopt'
             ]
-
-            # Calculate accounts adopted count
-            adopted_counts = kickoff_df.groupby('KICKOFF_TIMING_BUCKET').apply(
-                lambda x: (x['INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED'] == 'TRUE').sum()
-            ).reset_index(name='Accounts Adopted')
-            adopted_counts.columns = ['Kickoff Timing', 'Accounts Adopted']
-
-            summary_stats = summary_stats.merge(adopted_counts, on='Kickoff Timing')
 
             # Display summary table
             st.dataframe(
                 summary_stats.style.format({
                     'Accounts': '{:.0f}',
-                    'Accounts Adopted': '{:.0f}',
                     'Median Days to Kickoff': '{:.1f}',
-                    'Median Time to Adopt': '{:.0f}',
-                    'Avg Time to Adopt': '{:.1f}',
-                    'Adoption Rate %': '{:.1f}%'
+                    'Median Time to Adopt': '{:.0f}'
                 }),
                 use_container_width=True
             )
@@ -2077,7 +2064,6 @@ else:
             st.markdown("""
             **💡 Interpretation Guide:**
             - **Median Time to Adopt**: Days from AIAA start to adoption (lower is better)
-            - **Adoption Rate %**: Percentage of accounts that achieved adoption
             """)
 
             st.divider()
