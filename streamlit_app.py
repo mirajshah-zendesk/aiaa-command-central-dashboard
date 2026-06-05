@@ -1767,6 +1767,10 @@ else:
                     'NOTE': 'notes',
                     '__last_edited__': 'last_edited',
                 })[['instance_account_id', 'notes', 'last_edited']]
+                # Force matching dtypes — Snowflake may return int while the
+                # mart's instance_account_id is a string.
+                merged_notes['instance_account_id'] = merged_notes['instance_account_id'].astype(str)
+                output['instance_account_id'] = output['instance_account_id'].astype(str)
                 output = output.merge(merged_notes, on='instance_account_id', how='left')
                 output['notes'] = output['notes'].fillna('')
                 output['last_edited'] = output['last_edited'].fillna('')
