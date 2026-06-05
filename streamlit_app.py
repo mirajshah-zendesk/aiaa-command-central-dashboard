@@ -2070,19 +2070,13 @@ else:
                     'Median Time to Adopt': '{:.0f}',
                     'Avg Time to Adopt': '{:.1f}',
                     'Adoption Rate %': '{:.1f}%'
-                }).background_gradient(
-                    subset=['Median Time to Adopt'],
-                    cmap='RdYlGn_r',
-                    vmin=40,
-                    vmax=120
-                ),
+                }),
                 use_container_width=True
             )
 
             st.markdown("""
             **💡 Interpretation Guide:**
             - **Median Time to Adopt**: Days from AIAA start to adoption (lower is better)
-            - **Highlighted cells**: Green = faster time to adoption, Red = slower
             - **Adoption Rate %**: Percentage of accounts that achieved adoption
             """)
 
