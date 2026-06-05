@@ -2057,6 +2057,7 @@ else:
             adopted_counts = kickoff_df.groupby('KICKOFF_TIMING_BUCKET').apply(
                 lambda x: (x['INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED'] == 'TRUE').sum()
             ).reset_index(name='Accounts Adopted')
+            adopted_counts.columns = ['Kickoff Timing', 'Accounts Adopted']
 
             summary_stats = summary_stats.merge(adopted_counts, on='Kickoff Timing')
 
