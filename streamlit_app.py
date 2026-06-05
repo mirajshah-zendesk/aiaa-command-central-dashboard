@@ -278,6 +278,33 @@ def load_integrated_cohort_overrides():
     except Exception as e:
         return None, str(e)
 
+# SPIFF Leaderboard scoring constants (March 25 -> July 31, 2026 window)
+SPIFF_WINDOW_START = '2026-03-25'
+SPIFF_WINDOW_END = '2026-07-31'
+SPIFF_POINTS_DEPLOYED = 1
+SPIFF_POINTS_ADOPTED = 5
+SPIFF_POINTS_AR50 = 3
+
+# Maps mart-side name variants -> canonical team-mapping name. Add new entries
+# as typos / aliases / middle-name issues are discovered.
+SPIFF_NAME_ALIASES = {
+    'Harvey Hind-Pichter': 'Harvey Hind-Pitcher',  # typo in upstream data
+}
+
+@st.cache_data(ttl=3600)
+def load_spiff_team_mapping():
+    """One row per person with their team and role (AI Strategist or AI Consultant)."""
+    try:
+        session = get_active_session()
+        query = """
+        SELECT full_name, team, role
+        FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.SPIFF_TEAM_MAPPING
+        """
+        df = session.sql(query).to_pandas()
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
 def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
     return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -834,7 +861,7 @@ else:
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab5, tab_icl, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab_icl, tab6, tab7, tab_spiff = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
@@ -842,7 +869,8 @@ else:
         ":material/table: Data Explorer",
         ":material/list_alt: Integrated Cohort List",
         ":material/info: Metrics Guide",
-        ":material/rocket_launch: Kickoff Analysis"
+        ":material/rocket_launch: Kickoff Analysis",
+        ":material/emoji_events: SPIFF Leaderboard"
     ])
 
     with tab1:
@@ -2104,6 +2132,226 @@ else:
                 data=customer_data.to_csv(index=False).encode('utf-8'),
                 file_name=f"kickoff_customer_data_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
+            )
+
+    with tab_spiff:
+        st.subheader(":material/emoji_events: SPIFF Leaderboard")
+        st.markdown(
+            "[:material/slideshow: **Competition details**]"
+            "(https://docs.google.com/presentation/d/1I-IkP5n_DgsYQFvqZDSHiuaXh5JPxXB9gRykAI2lVjY/edit?usp=sharing)"
+        )
+        st.caption(
+            f"Scoring window: **{SPIFF_WINDOW_START} to {SPIFF_WINDOW_END}**. "
+            f"Points: **{SPIFF_POINTS_DEPLOYED}** per first AI Agent deployed, "
+            f"**{SPIFF_POINTS_ADOPTED}** per first adoption, "
+            f"**{SPIFF_POINTS_AR50}** per first 50% AR rate. "
+            "Only customers currently penetrated on AI Agents Paid count. "
+            "If a customer hits both deployed and adopted in the window, only adopted is counted."
+        )
+
+        # Build the per-instance event dataset (latest snapshot, paid penetrated only)
+        spiff_source = st.session_state.global_data.copy() if st.session_state.global_data is not None else None
+        if spiff_source is None or len(spiff_source) == 0:
+            st.warning("No data loaded yet.")
+        else:
+            latest_snap = spiff_source['SOURCE_SNAPSHOT_DATE'].max()
+            st.markdown(f"**Last updated:** {pd.Timestamp(latest_snap).strftime('%Y-%m-%d')} (latest mart snapshot)")
+            spiff_latest = spiff_source[spiff_source['SOURCE_SNAPSHOT_DATE'] == latest_snap].copy()
+            spiff_latest = spiff_latest[spiff_latest['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True].copy()
+
+            for col in ('FIRST_BOT_DEPLOYED_DATE_PAID', 'FIRST_ADOPTION_DATE_PAID', 'FIRST_50PCT_AR_DATE_PAID'):
+                spiff_latest[col] = pd.to_datetime(spiff_latest[col], errors='coerce')
+
+            window_start = pd.Timestamp(SPIFF_WINDOW_START)
+            window_end = pd.Timestamp(SPIFF_WINDOW_END)
+
+            in_win = lambda s: (s >= window_start) & (s <= window_end)
+            spiff_latest['DEPLOYED_IN_WIN'] = in_win(spiff_latest['FIRST_BOT_DEPLOYED_DATE_PAID']).fillna(False).astype(int)
+            spiff_latest['ADOPTED_IN_WIN'] = in_win(spiff_latest['FIRST_ADOPTION_DATE_PAID']).fillna(False).astype(int)
+            spiff_latest['AR50_IN_WIN'] = in_win(spiff_latest['FIRST_50PCT_AR_DATE_PAID']).fillna(False).astype(int)
+            # Dedup: if adopted in window, deployed doesn't count
+            spiff_latest['DEPLOYED_COUNTED'] = spiff_latest.apply(
+                lambda r: 0 if r['ADOPTED_IN_WIN'] == 1 else r['DEPLOYED_IN_WIN'], axis=1
+            )
+
+            # Normalize known name aliases / typos so points roll up to the
+            # canonical name from the team mapping.
+            for col in ('CONSULTANT_NAME', 'AI_STRATEGIST_NAME'):
+                if col in spiff_latest.columns:
+                    spiff_latest[col] = spiff_latest[col].replace(SPIFF_NAME_ALIASES)
+
+            # Load team mapping
+            team_df, team_err = load_spiff_team_mapping()
+            if team_err or team_df is None:
+                st.error(f"Could not load team mapping: {team_err}")
+                team_df = pd.DataFrame(columns=['FULL_NAME', 'TEAM', 'ROLE'])
+
+            consultant_team = dict(zip(
+                team_df[team_df['ROLE'] == 'AI Consultant']['FULL_NAME'],
+                team_df[team_df['ROLE'] == 'AI Consultant']['TEAM']
+            ))
+            strategist_team = dict(zip(
+                team_df[team_df['ROLE'] == 'AI Strategist']['FULL_NAME'],
+                team_df[team_df['ROLE'] == 'AI Strategist']['TEAM']
+            ))
+
+            def build_leaderboard(name_col, team_lookup):
+                df = spiff_latest.copy()
+                df = df[df[name_col].notna() & (df[name_col] != '')]
+                grp = df.groupby(name_col).agg(
+                    bots_deployed=('DEPLOYED_COUNTED', 'sum'),
+                    adopted=('ADOPTED_IN_WIN', 'sum'),
+                    ar50=('AR50_IN_WIN', 'sum'),
+                ).reset_index()
+                grp = grp.rename(columns={name_col: 'name'})
+                grp['points'] = (
+                    grp['bots_deployed'] * SPIFF_POINTS_DEPLOYED
+                    + grp['adopted'] * SPIFF_POINTS_ADOPTED
+                    + grp['ar50'] * SPIFF_POINTS_AR50
+                )
+                grp['team'] = grp['name'].map(team_lookup).fillna('No team assignment')
+                grp = grp.sort_values('points', ascending=False).reset_index(drop=True)
+                grp['rank'] = grp.index + 1
+                return grp
+
+            consultant_lb = build_leaderboard('CONSULTANT_NAME', consultant_team)
+            strategist_lb = build_leaderboard('AI_STRATEGIST_NAME', strategist_team)
+
+            def build_team_leaderboard(individual_lb):
+                # Exclude "No team assignment" — those points don't go to any team
+                t = individual_lb[individual_lb['team'] != 'No team assignment'].copy()
+                tg = t.groupby('team').agg(
+                    bots_deployed=('bots_deployed', 'sum'),
+                    adopted=('adopted', 'sum'),
+                    ar50=('ar50', 'sum'),
+                    points=('points', 'sum'),
+                    members=('name', 'nunique'),
+                ).reset_index()
+                tg = tg.sort_values('points', ascending=False).reset_index(drop=True)
+                tg['rank'] = tg.index + 1
+                return tg
+
+            consultant_team_lb = build_team_leaderboard(consultant_lb)
+            strategist_team_lb = build_team_leaderboard(strategist_lb)
+
+            # ==================== PODIUM ====================
+            st.markdown("### 🏆 Podium")
+
+            def medal(rank):
+                return {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, '')
+
+            podium_col1, podium_col2 = st.columns(2)
+
+            with podium_col1:
+                st.markdown("#### Top 3 AI Consultants")
+                for _, row in consultant_lb.head(3).iterrows():
+                    st.metric(
+                        label=f"{medal(row['rank'])} {row['name']} ({row['team']})",
+                        value=f"{int(row['points'])} pts",
+                        delta=f"{int(row['bots_deployed'])} deployed · {int(row['adopted'])} adopted · {int(row['ar50'])} AR50",
+                        delta_color="off",
+                    )
+                if len(consultant_team_lb) > 0:
+                    top_team = consultant_team_lb.iloc[0]
+                    st.markdown("**🏅 Top Consultant Team**")
+                    st.metric(
+                        label=f"{top_team['team']}",
+                        value=f"{int(top_team['points'])} pts",
+                        delta=f"{int(top_team['members'])} members",
+                        delta_color="off",
+                    )
+
+            with podium_col2:
+                st.markdown("#### Top 3 AI Strategists")
+                for _, row in strategist_lb.head(3).iterrows():
+                    st.metric(
+                        label=f"{medal(row['rank'])} {row['name']} ({row['team']})",
+                        value=f"{int(row['points'])} pts",
+                        delta=f"{int(row['bots_deployed'])} deployed · {int(row['adopted'])} adopted · {int(row['ar50'])} AR50",
+                        delta_color="off",
+                    )
+                if len(strategist_team_lb) > 0:
+                    top_team = strategist_team_lb.iloc[0]
+                    st.markdown("**🏅 Top Strategist Team**")
+                    st.metric(
+                        label=f"{top_team['team']}",
+                        value=f"{int(top_team['points'])} pts",
+                        delta=f"{int(top_team['members'])} members",
+                        delta_color="off",
+                    )
+
+            st.divider()
+
+            # ==================== POINTS TABLES ====================
+            st.markdown("### 📊 Points Tables")
+
+            top_n = st.slider("Show top N for each role", min_value=5, max_value=50, value=20, step=5)
+            tbl_col1, tbl_col2 = st.columns(2)
+
+            display_cols = ['rank', 'name', 'team', 'bots_deployed', 'adopted', 'ar50', 'points']
+
+            with tbl_col1:
+                st.markdown(f"#### AI Consultants (Top {top_n})")
+                st.dataframe(consultant_lb[display_cols].head(top_n), hide_index=True, use_container_width=True, height=400)
+            with tbl_col2:
+                st.markdown(f"#### AI Strategists (Top {top_n})")
+                st.dataframe(strategist_lb[display_cols].head(top_n), hide_index=True, use_container_width=True, height=400)
+
+            team_col1, team_col2 = st.columns(2)
+            team_display_cols = ['rank', 'team', 'members', 'bots_deployed', 'adopted', 'ar50', 'points']
+            with team_col1:
+                st.markdown("#### Consultant Teams")
+                st.dataframe(consultant_team_lb[team_display_cols], hide_index=True, use_container_width=True)
+            with team_col2:
+                st.markdown("#### Strategist Teams")
+                st.dataframe(strategist_team_lb[team_display_cols], hide_index=True, use_container_width=True)
+
+            st.divider()
+
+            # ==================== RAW DATA ====================
+            st.markdown("### 📋 Raw Data Pull")
+            st.caption("One row per currently-paid-penetrated instance with the SPIFF event dates.")
+
+            raw_cols = [
+                'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN', 'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME',
+                'CONSULTANT_NAME', 'AI_STRATEGIST_NAME',
+                'FIRST_BOT_DEPLOYED_DATE_PAID', 'FIRST_ADOPTION_DATE_PAID', 'FIRST_50PCT_AR_DATE_PAID',
+                'AUTOMATED_RESOLUTIONS_PAID', 'BOT_INTERACTIONS_PAID',
+            ]
+            raw_cols = [c for c in raw_cols if c in spiff_latest.columns]
+            raw_df = spiff_latest[raw_cols].rename(columns={
+                'FIRST_BOT_DEPLOYED_DATE_PAID': 'FIRST_AI_AGENT_DEPLOYED_DATE',
+                'FIRST_ADOPTION_DATE_PAID': 'FIRST_ADOPTED_DATE',
+                'FIRST_50PCT_AR_DATE_PAID': 'FIRST_AR_50_DATE',
+                'AUTOMATED_RESOLUTIONS_PAID': 'NUM_AUTOMATED_RESOLUTIONS_28D',
+                'BOT_INTERACTIONS_PAID': 'NUM_AI_AGENT_INTERACTIONS_28D',
+                'AI_STRATEGIST_NAME': 'AI_AGENTS_SPECIALIST_NAME',
+            })
+            for col in ('FIRST_AI_AGENT_DEPLOYED_DATE', 'FIRST_ADOPTED_DATE', 'FIRST_AR_50_DATE'):
+                if col in raw_df.columns:
+                    raw_df[col] = pd.to_datetime(raw_df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+
+            spiff_search = st.text_input(
+                "Search account",
+                placeholder="Enter CRM account name, instance subdomain, consultant, or strategist (partial OK)",
+                key="spiff_search",
+            )
+            spiff_search_fields = [c for c in ('CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN', 'CONSULTANT_NAME', 'AI_AGENTS_SPECIALIST_NAME') if c in raw_df.columns]
+            if spiff_search and spiff_search_fields:
+                term = spiff_search.strip().lower()
+                mask = pd.Series(False, index=raw_df.index)
+                for f in spiff_search_fields:
+                    mask = mask | raw_df[f].astype(str).str.lower().str.contains(term, na=False)
+                raw_df = raw_df[mask]
+
+            st.markdown(f"**Rows:** {len(raw_df):,}")
+            st.dataframe(raw_df, hide_index=True, use_container_width=True, height=500)
+
+            st.download_button(
+                label=":material/download: Download SPIFF Raw Data (CSV)",
+                data=raw_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"spiff_raw_data_{pd.Timestamp(latest_snap).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
             )
 
 # Footer
