@@ -2010,12 +2010,14 @@ else:
             summary_stats = kickoff_df.groupby('KICKOFF_TIMING_BUCKET').agg({
                 'CRM_ACCOUNT_ID': 'count',
                 'DAYS_TO_KICKOFF': ['median'],
+                'TIME_TO_DEPLOY_PAID': ['median'],
                 'TIME_TO_ADOPT_PAID': ['median']
             }).reset_index()
 
             summary_stats.columns = [
                 'Kickoff Timing', 'Accounts',
                 'Median Days to Kickoff',
+                'Median Time to Activate',
                 'Median Time to Adopt'
             ]
 
@@ -2024,6 +2026,7 @@ else:
                 summary_stats.style.format({
                     'Accounts': '{:.0f}',
                     'Median Days to Kickoff': '{:.1f}',
+                    'Median Time to Activate': '{:.0f}',
                     'Median Time to Adopt': '{:.0f}'
                 }),
                 use_container_width=True,
@@ -2032,6 +2035,7 @@ else:
 
             st.markdown("""
             **💡 Interpretation Guide:**
+            - **Median Time to Activate**: Days from AIAA start to activation (lower is better)
             - **Median Time to Adopt**: Days from AIAA start to adoption (lower is better)
             """)
 
