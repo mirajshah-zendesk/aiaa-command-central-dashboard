@@ -2086,4 +2086,4 @@ else:
 
 # Footer
 st.divider()
-st.markdown("<div style='text-align: center; color: gray;'>AIA Command Central • Formulas match Excel exactly</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: gray;'>AIAA Command Central</div>", unsafe_allow_html=True)
