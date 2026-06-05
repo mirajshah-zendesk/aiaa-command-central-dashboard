@@ -1288,13 +1288,15 @@ else:
                         'AI_STRATEGIST_NAME': 'first',  # AI Success Strategist
                         'CONSULTANT_NAME': 'first',  # AI Expert Consultant/CSM
                         'AR_RATE_PAID': 'mean',  # Average AR rate across instances
-                        'AUTOMATED_RESOLUTIONS_PAID': 'sum'  # Sum ARs across instances
+                        'AUTOMATED_RESOLUTIONS_PAID': 'sum',  # Sum ARs across instances
+                        'BOT_INTERACTIONS_PAID': 'sum'  # Sum bot interactions across instances
                     }).reset_index()
 
                     # Previous snapshot
                     lost_prev_agg = lost_customers_prev.groupby('CRM_ACCOUNT_ID').agg({
                         'AR_RATE_PAID': 'mean',
-                        'AUTOMATED_RESOLUTIONS_PAID': 'sum'
+                        'AUTOMATED_RESOLUTIONS_PAID': 'sum',
+                        'BOT_INTERACTIONS_PAID': 'sum'
                     }).reset_index()
 
                     # Merge current and previous data
@@ -1317,8 +1319,44 @@ else:
                         'AR_RATE_PAID_Current': 'Current AR Rate',
                         'AR_RATE_PAID_Previous': 'Previous AR Rate',
                         'AUTOMATED_RESOLUTIONS_PAID_Current': 'Current ARs (28d)',
-                        'AUTOMATED_RESOLUTIONS_PAID_Previous': 'Previous ARs (28d)'
+                        'AUTOMATED_RESOLUTIONS_PAID_Previous': 'Previous ARs (28d)',
+                        'BOT_INTERACTIONS_PAID_Current': 'Current Bot Interactions',
+                        'BOT_INTERACTIONS_PAID_Previous': 'Previous Bot Interactions'
                     })
+
+                    # Calculate changes for categorization
+                    lost_df['AR_Rate_PP_Change'] = (lost_df['Current AR Rate'] - lost_df['Previous AR Rate'])
+                    lost_df['AR_Count_Change'] = lost_df['Current ARs (28d)'] - lost_df['Previous ARs (28d)']
+                    lost_df['Bot_Interactions_Pct_Change'] = (
+                        (lost_df['Current Bot Interactions'] - lost_df['Previous Bot Interactions']) /
+                        lost_df['Previous Bot Interactions'].replace(0, 1)  # Avoid division by zero
+                    )
+
+                    # Apply waterfall categorization logic
+                    def categorize_loss(row):
+                        # 1. No Longer Activated: fewer than 100 ARs
+                        if row['Current ARs (28d)'] < 100:
+                            return "No Longer Activated"
+
+                        # 2. Increased Deployment: AR count hasn't dropped but bot interactions increased >20%
+                        if row['AR_Count_Change'] >= 0 and row['Bot_Interactions_Pct_Change'] > 0.20:
+                            return "Increased Deployment"
+
+                        # 3. Performance & Volume Decline: AR rate down >5pp AND bot interactions reduced >20%
+                        if row['AR_Rate_PP_Change'] < -0.05 and row['Bot_Interactions_Pct_Change'] < -0.20:
+                            return "Performance & Volume Decline"
+
+                        # 4. Performance Decline: AR rate down >5pp only
+                        if row['AR_Rate_PP_Change'] < -0.05:
+                            return "Performance Decline"
+
+                        # 5. Yoyo: AR rate is >25%
+                        if row['Current AR Rate'] > 0.25:
+                            return "Yoyo"
+
+                        return "Other"
+
+                    lost_df['Category'] = lost_df.apply(categorize_loss, axis=1)
 
                     # Initialize notes table
                     init_notes_table()
@@ -1330,12 +1368,15 @@ else:
                     # Merge notes into the dataframe
                     lost_df['Notes'] = lost_df['CRM_ACCOUNT_ID'].map(notes_dict).fillna('')
 
-                    # Reorder columns (keep IDs for internal use but not display)
+                    # Reorder columns (keep IDs and calculation columns for internal use)
                     column_order = [
                         'CRM_ACCOUNT_ID', 'Account', 'INSTANCE_ACCOUNT_ID', 'Instance',
-                        'Region', 'ARR Band', 'Segment', 'AI Strategist', 'CSM',
+                        'Category', 'Region', 'ARR Band', 'Segment', 'AI Strategist', 'CSM',
                         'Current AR Rate', 'Previous AR Rate',
-                        'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
+                        'Current ARs (28d)', 'Previous ARs (28d)',
+                        'Current Bot Interactions', 'Previous Bot Interactions',
+                        'AR_Rate_PP_Change', 'AR_Count_Change', 'Bot_Interactions_Pct_Change',
+                        'Notes'
                     ]
                     lost_df = lost_df[column_order].sort_values('Account')
 
@@ -1346,9 +1387,9 @@ else:
                     lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
                     lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    # Select columns for display (remove CRM_ACCOUNT_ID and INSTANCE_ACCOUNT_ID)
+                    # Select columns for display (remove IDs and calculation columns)
                     display_columns = [
-                        'Account', 'Instance', 'Region', 'ARR Band', 'Segment',
+                        'Account', 'Instance', 'Category', 'Region', 'ARR Band', 'Segment',
                         'AI Strategist', 'CSM',
                         'Current AR Rate', 'Previous AR Rate',
                         'Current ARs (28d)', 'Previous ARs (28d)', 'Notes'
