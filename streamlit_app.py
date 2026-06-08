@@ -1313,12 +1313,40 @@ else:
                     lost_customers_latest = latest_snapshot[latest_snapshot['CRM_ACCOUNT_ID'].isin(lost_adoption_ids)].copy()
                     lost_customers_prev = previous_snapshot[previous_snapshot['CRM_ACCOUNT_ID'].isin(lost_adoption_ids)].copy()
 
+                    # Compute the "driving instance" per CRM — the instance whose
+                    # AR rate dropped the most from previous to latest snapshot.
+                    # Tiebreaker: lowest current AR rate. Used to populate the
+                    # representative instance subdomain in the main table.
+                    inst_pair = lost_customers_latest[['CRM_ACCOUNT_ID', 'INSTANCE_ACCOUNT_ID',
+                                                       'INSTANCE_ACCOUNT_SUBDOMAIN', 'AR_RATE_PAID']].rename(
+                        columns={'AR_RATE_PAID': 'AR_RATE_LATEST'}
+                    )
+                    inst_prev = lost_customers_prev[['CRM_ACCOUNT_ID', 'INSTANCE_ACCOUNT_ID',
+                                                     'AR_RATE_PAID']].rename(
+                        columns={'AR_RATE_PAID': 'AR_RATE_PREV'}
+                    )
+                    inst_pair = inst_pair.merge(
+                        inst_prev,
+                        on=['CRM_ACCOUNT_ID', 'INSTANCE_ACCOUNT_ID'],
+                        how='left',
+                    )
+                    inst_pair['AR_RATE_DROP'] = inst_pair['AR_RATE_PREV'].fillna(0) - inst_pair['AR_RATE_LATEST'].fillna(0)
+                    # Pick the instance per CRM with the largest positive drop;
+                    # tiebreak on lowest current AR rate.
+                    inst_pair = inst_pair.sort_values(
+                        ['CRM_ACCOUNT_ID', 'AR_RATE_DROP', 'AR_RATE_LATEST'],
+                        ascending=[True, False, True],
+                    )
+                    driving_instance = inst_pair.drop_duplicates(subset='CRM_ACCOUNT_ID', keep='first')[
+                        ['CRM_ACCOUNT_ID', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN']
+                    ]
+
                     # Aggregate metrics by CRM account for both snapshots
-                    # Latest snapshot
+                    # Latest snapshot — note that INSTANCE_* fields are NOT
+                    # aggregated here; they're merged in from `driving_instance`
+                    # below so we display the actual loss-driving instance.
                     lost_latest_agg = lost_customers_latest.groupby('CRM_ACCOUNT_ID').agg({
                         'CRM_ACCOUNT_NAME': 'first',
-                        'INSTANCE_ACCOUNT_ID': 'first',  # Take first instance ID
-                        'INSTANCE_ACCOUNT_SUBDOMAIN': 'first',  # Take first instance name
                         'CRM_REGION': 'first',
                         'CRM_ARR_BAND_BROAD': 'first',
                         'CRM_MARKET_SEGMENT': 'first',
@@ -1327,7 +1355,7 @@ else:
                         'AR_RATE_PAID': 'mean',  # Average AR rate across instances
                         'AUTOMATED_RESOLUTIONS_PAID': 'sum',  # Sum ARs across instances
                         'BOT_INTERACTIONS_PAID': 'sum'  # Sum bot interactions across instances
-                    }).reset_index()
+                    }).reset_index().merge(driving_instance, on='CRM_ACCOUNT_ID', how='left')
 
                     # Previous snapshot
                     lost_prev_agg = lost_customers_prev.groupby('CRM_ACCOUNT_ID').agg({
@@ -1349,7 +1377,7 @@ else:
                     # — flagged in the column label so the rollup is explicit.
                     lost_df = lost_df.rename(columns={
                         'CRM_ACCOUNT_NAME': 'Account',
-                        'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance',
+                        'INSTANCE_ACCOUNT_SUBDOMAIN': 'Driving Instance',
                         'CRM_REGION': 'Region',
                         'CRM_ARR_BAND_BROAD': 'ARR Band',
                         'CRM_MARKET_SEGMENT': 'Segment',
@@ -1409,7 +1437,7 @@ else:
 
                     # Reorder columns (keep IDs and calculation columns for internal use)
                     column_order = [
-                        'CRM_ACCOUNT_ID', 'Account', 'INSTANCE_ACCOUNT_ID', 'Instance',
+                        'CRM_ACCOUNT_ID', 'Account', 'INSTANCE_ACCOUNT_ID', 'Driving Instance',
                         'Category', 'Region', 'ARR Band', 'Segment', 'AI Strategist', 'CSM',
                         'Avg AR Rate (Current)', 'Avg AR Rate (Previous)',
                         'Total ARs (Current, 28d)', 'Total ARs (Previous, 28d)',
@@ -1427,14 +1455,15 @@ else:
                     lost_df_display['Total ARs (Previous, 28d)'] = lost_df_display['Total ARs (Previous, 28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
                     st.caption(
-                        "Each row is a CRM account. AR Rate columns are **averaged** across all instances of "
-                        "the CRM and AR counts are **summed**. Expand the per-instance breakdown below the "
-                        "table to see which instance(s) drove the change."
+                        "Each row is a CRM account. **Driving Instance** is the instance whose AR rate dropped "
+                        "the most week-over-week (or the only instance, if there's just one). AR Rate columns "
+                        "are **averaged** across all instances of the CRM and AR counts are **summed** — "
+                        "expand the per-instance breakdown below to see every instance."
                     )
 
-                    # Select columns for display (CRM-level only — instance is in the breakdown)
+                    # Select columns for display (CRM-level + driving instance)
                     display_columns = [
-                        'Account', 'Category', 'Region', 'ARR Band', 'Segment',
+                        'Account', 'Driving Instance', 'Category', 'Region', 'ARR Band', 'Segment',
                         'AI Strategist', 'CSM',
                         'Avg AR Rate (Current)', 'Avg AR Rate (Previous)',
                         'Total ARs (Current, 28d)', 'Total ARs (Previous, 28d)'
