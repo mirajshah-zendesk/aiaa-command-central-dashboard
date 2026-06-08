@@ -139,6 +139,112 @@ def load_notes(snapshot_date):
         st.warning(f"Could not load notes: {e}")
         return pd.DataFrame(columns=['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_NAME', 'NOTES', 'CREATED_BY', 'UPDATED_AT'])
 
+def init_missed_targets_notes_table():
+    """Initialize the missed targets notes table if it doesn't exist"""
+    try:
+        session = get_active_session()
+
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.MISSED_TARGETS_NOTES (
+            CRM_ACCOUNT_ID VARCHAR(255),
+            CRM_ACCOUNT_NAME VARCHAR(500),
+            INSTANCE_ACCOUNT_ID VARCHAR(255),
+            INSTANCE_NAME VARCHAR(500),
+            SNAPSHOT_DATE DATE,
+            NOTES TEXT,
+            CREATED_BY VARCHAR(255),
+            CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+            UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+            PRIMARY KEY (CRM_ACCOUNT_ID, SNAPSHOT_DATE)
+        )
+        """
+        session.sql(create_table_sql).collect()
+        return True
+    except Exception as e:
+        st.error(f"Error initializing missed targets notes table: {e}")
+        return False
+
+def save_missed_targets_note(crm_account_id, crm_account_name, instance_account_id, instance_name, snapshot_date, notes, user_email):
+    """Save or update a note for a customer with missed targets"""
+    try:
+        session = get_active_session()
+
+        # Format date consistently
+        if isinstance(snapshot_date, pd.Timestamp):
+            snapshot_date_str = snapshot_date.strftime('%Y-%m-%d')
+        else:
+            snapshot_date_str = str(snapshot_date)
+
+        # Check if record exists
+        check_sql = f"""
+        SELECT COUNT(*) as cnt
+        FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.MISSED_TARGETS_NOTES
+        WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
+          AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
+        """
+        result = session.sql(check_sql).collect()
+        exists = result[0]['CNT'] > 0
+
+        if exists:
+            # Update existing record
+            update_sql = f"""
+            UPDATE STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.MISSED_TARGETS_NOTES
+            SET NOTES = $${notes}$$,
+                INSTANCE_ACCOUNT_ID = '{instance_account_id}',
+                INSTANCE_NAME = $${instance_name}$$,
+                UPDATED_AT = CURRENT_TIMESTAMP()
+            WHERE CRM_ACCOUNT_ID = '{crm_account_id}'
+              AND SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
+            """
+            session.sql(update_sql).collect()
+        else:
+            # Insert new record
+            insert_sql = f"""
+            INSERT INTO STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.MISSED_TARGETS_NOTES
+            (CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, INSTANCE_ACCOUNT_ID, INSTANCE_NAME, SNAPSHOT_DATE, NOTES, CREATED_BY, UPDATED_AT)
+            VALUES (
+                '{crm_account_id}',
+                $${crm_account_name}$$,
+                '{instance_account_id}',
+                $${instance_name}$$,
+                '{snapshot_date_str}'::DATE,
+                $${notes}$$,
+                '{user_email}',
+                CURRENT_TIMESTAMP()
+            )
+            """
+            session.sql(insert_sql).collect()
+
+        return True
+    except Exception as e:
+        st.error(f"Error saving note: {e}")
+        import traceback
+        st.error(traceback.format_exc())
+        return False
+
+def load_missed_targets_notes(snapshot_date):
+    """Load all missed targets notes for a specific snapshot date"""
+    try:
+        session = get_active_session()
+
+        # Format date consistently
+        if isinstance(snapshot_date, pd.Timestamp):
+            snapshot_date_str = snapshot_date.strftime('%Y-%m-%d')
+        else:
+            snapshot_date_str = str(snapshot_date)
+
+        query = f"""
+        SELECT CRM_ACCOUNT_ID, CRM_ACCOUNT_NAME, INSTANCE_ACCOUNT_ID, INSTANCE_NAME, NOTES, CREATED_BY, UPDATED_AT
+        FROM STREAMLIT_APPS.AIAA_COMMAND_CENTRAL.MISSED_TARGETS_NOTES
+        WHERE SNAPSHOT_DATE = '{snapshot_date_str}'::DATE
+        """
+        df = session.sql(query).to_pandas()
+        return df
+    except Exception as e:
+        # Table might not exist yet or other error
+        st.warning(f"Could not load notes: {e}")
+        return pd.DataFrame(columns=['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_NAME', 'NOTES', 'CREATED_BY', 'UPDATED_AT'])
+
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_data_from_snowflake():
     """Load data from Snowflake table"""
@@ -1675,7 +1781,6 @@ else:
 
             if len(missed_targets_df) > 0:
                 st.divider()
-                st.markdown("### 📋 Customers with Missed Target Dates")
 
                 # Aggregate by CRM account
                 missed_agg = missed_targets_df.groupby('CRM_ACCOUNT_ID').agg({
@@ -1688,36 +1793,42 @@ else:
                     'AI_STRATEGIST_NAME': 'first',
                     'CONSULTANT_NAME': 'first',
                     'TARGET_DATE': 'first',
-                    'PROJECTED_GO_LIVE_DATE': 'first',
                     'CURRENT_PHASE': 'first',
                     'COHORT': 'first'
                 }).reset_index()
+
+                # Calculate days overdue
+                missed_agg['Days Overdue'] = (latest_date - pd.to_datetime(missed_agg['TARGET_DATE'])).dt.days
+
+                # Format target date for display
+                missed_agg['Target Date Formatted'] = pd.to_datetime(missed_agg['TARGET_DATE'], errors='coerce').dt.strftime('%Y-%m-%d')
+
+                # Initialize notes table
+                init_missed_targets_notes_table()
+
+                # Load existing notes for this snapshot
+                existing_notes = load_missed_targets_notes(latest_date)
+                notes_dict = dict(zip(existing_notes['CRM_ACCOUNT_ID'], existing_notes['NOTES'])) if len(existing_notes) > 0 else {}
+
+                # Merge notes into the dataframe
+                missed_agg['Notes'] = missed_agg['CRM_ACCOUNT_ID'].map(notes_dict).fillna('')
+
+                # Sort by days overdue (descending) and account name
+                missed_agg = missed_agg.sort_values(['Days Overdue', 'CRM_ACCOUNT_NAME'], ascending=[False, True])
 
                 # Rename columns for display
                 missed_display = missed_agg.rename(columns={
                     'CRM_ACCOUNT_NAME': 'Account',
                     'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance',
+                    'Target Date Formatted': 'Target Date',
                     'CRM_REGION': 'Region',
                     'CRM_ARR_BAND_BROAD': 'ARR Band',
                     'CRM_MARKET_SEGMENT': 'Segment',
                     'AI_STRATEGIST_NAME': 'AI Strategist',
                     'CONSULTANT_NAME': 'CSM',
-                    'TARGET_DATE': 'Target Date',
-                    'PROJECTED_GO_LIVE_DATE': 'Projected Go-Live',
                     'CURRENT_PHASE': 'Current Phase',
                     'COHORT': 'Cohort'
                 })
-
-                # Format dates for display
-                for date_col in ['Target Date', 'Projected Go-Live']:
-                    if date_col in missed_display.columns:
-                        missed_display[date_col] = pd.to_datetime(missed_display[date_col], errors='coerce').dt.strftime('%Y-%m-%d')
-
-                # Calculate days overdue
-                missed_display['Days Overdue'] = (latest_date - pd.to_datetime(missed_agg['TARGET_DATE'])).dt.days
-
-                # Sort by days overdue (descending) and account name
-                missed_display = missed_display.sort_values(['Days Overdue', 'Account'], ascending=[False, True])
 
                 # Select columns for display
                 display_columns = [
@@ -1734,37 +1845,58 @@ else:
                     hide_index=True
                 )
 
-                # Summary statistics
                 st.divider()
-                st.markdown("### 📊 Summary Statistics")
 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    avg_overdue = missed_display['Days Overdue'].mean()
-                    st.metric("Average Days Overdue", f"{avg_overdue:.1f}")
-                with col2:
-                    max_overdue = missed_display['Days Overdue'].max()
-                    st.metric("Max Days Overdue", f"{int(max_overdue)}")
-                with col3:
-                    unique_crms = missed_display['CRM_ACCOUNT_ID'].nunique()
-                    st.metric("Unique Accounts", unique_crms)
+                # Add notes input section
+                st.markdown("#### 📝 Customer Notes")
+                st.info("Select a customer below to view or edit notes about their missed target date.")
 
-                # Breakdown by region if available
-                if 'Region' in missed_display.columns:
-                    st.divider()
-                    st.markdown("### 🌍 Breakdown by Region")
-                    region_breakdown = missed_display.groupby('Region').agg({
-                        'CRM_ACCOUNT_ID': 'count',
-                        'Days Overdue': 'mean'
-                    }).reset_index()
-                    region_breakdown.columns = ['Region', 'Count', 'Avg Days Overdue']
-                    region_breakdown = region_breakdown.sort_values('Count', ascending=False)
-                    st.dataframe(region_breakdown, use_container_width=True, hide_index=True)
+                # Get current user
+                try:
+                    session = get_active_session()
+                    current_user = session.sql("SELECT CURRENT_USER()").collect()[0][0]
+                except:
+                    current_user = "unknown_user"
 
-                # Download button
+                # Customer selector (use original column names)
+                customer_names = missed_agg[['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN']].values.tolist()
+                customer_display = [f"{name}" for id, name, inst_id, inst_name in customer_names]
+                customer_map = {f"{name}": (id, inst_id, inst_name) for id, name, inst_id, inst_name in customer_names}
+
+                selected_customer = st.selectbox("Select Customer", customer_display, key="missed_targets_customer_select")
+
+                if selected_customer:
+                    selected_id, selected_instance_id, selected_instance_name = customer_map[selected_customer]
+                    existing_note = notes_dict.get(selected_id, "")
+
+                    # Show existing note if present
+                    if existing_note:
+                        st.markdown("**Current Notes:**")
+                        st.info(existing_note)
+
+                    # Notes text area
+                    note_text = st.text_area(
+                        f"Edit notes for {selected_customer}",
+                        value=existing_note,
+                        height=200,
+                        placeholder="Enter notes about why this customer missed their target date and what actions are being taken...",
+                        key=f"missed_targets_note_input_{selected_id}"
+                    )
+
+                    if st.button("💾 Save Note", key=f"missed_targets_save_note_{selected_id}"):
+                        with st.spinner("Saving note..."):
+                            success = save_missed_targets_note(selected_id, selected_customer, selected_instance_id, selected_instance_name, latest_date, note_text, current_user)
+                        if success:
+                            st.success(f"✓ Note saved for {selected_customer} (ID: {selected_id})")
+                            st.info("Refreshing page to load updated notes...")
+                            st.rerun()
+                        else:
+                            st.error("Failed to save note - check error message above")
+
+                # Download button (with unformatted data for Excel, including all columns)
                 st.divider()
                 st.download_button(
-                    label=":material/download: Download Missed Targets List (CSV)",
+                    label=":material/download: Download Missed Targets List with Notes (CSV)",
                     data=missed_display.to_csv(index=False).encode('utf-8'),
                     file_name=f"missed_target_dates_{latest_date.strftime('%Y%m%d')}.csv",
                     mime="text/csv"
