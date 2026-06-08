@@ -873,11 +873,12 @@ else:
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab5, tab_icl, tab6, tab7, tab_spiff = st.tabs([
+    tab1, tab2, tab3, tab4, tab_missed_targets, tab5, tab_icl, tab6, tab7, tab_spiff = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
         ":material/warning: Adoption Loss",
+        ":material/schedule: Missed Target Dates",
         ":material/table: Data Explorer",
         ":material/list_alt: Integrated Cohort List",
         ":material/info: Metrics Guide",
@@ -1558,6 +1559,157 @@ else:
                         file_name=f"gained_adoption_{previous_date.strftime('%Y%m%d')}_to_{latest_date.strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
+
+    with tab_missed_targets:
+        st.subheader("Missed Target Dates")
+        st.caption("Customers who had a target deployment date in the last week but no bot has been deployed yet.")
+
+        if len(gdf) == 0:
+            st.warning("No data available for the selected filters.")
+        else:
+            # Use the latest snapshot
+            gdf_sorted = gdf.copy()
+            gdf_sorted['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(gdf_sorted['SOURCE_SNAPSHOT_DATE'])
+            gdf_sorted = gdf_sorted.sort_values('SOURCE_SNAPSHOT_DATE')
+
+            latest_date = gdf_sorted['SOURCE_SNAPSHOT_DATE'].max()
+            one_week_ago = latest_date - timedelta(days=7)
+
+            st.markdown(f"**As of:** {latest_date.strftime('%Y-%m-%d')}")
+            st.markdown(f"**Target date window:** {one_week_ago.strftime('%Y-%m-%d')} to {latest_date.strftime('%Y-%m-%d')}")
+
+            latest_snapshot = gdf_sorted[gdf_sorted['SOURCE_SNAPSHOT_DATE'] == latest_date].copy()
+
+            # Convert target date columns to datetime
+            if 'PROJECTED_GO_LIVE_DATE' in latest_snapshot.columns:
+                latest_snapshot['PROJECTED_GO_LIVE_DATE'] = pd.to_datetime(latest_snapshot['PROJECTED_GO_LIVE_DATE'], errors='coerce')
+            else:
+                latest_snapshot['PROJECTED_GO_LIVE_DATE'] = pd.NaT
+
+            if 'TARGET_DEPLOY_DATE_LAST_WEEK' in latest_snapshot.columns:
+                latest_snapshot['TARGET_DEPLOY_DATE_LAST_WEEK'] = pd.to_datetime(latest_snapshot['TARGET_DEPLOY_DATE_LAST_WEEK'], errors='coerce')
+            else:
+                latest_snapshot['TARGET_DEPLOY_DATE_LAST_WEEK'] = pd.NaT
+
+            # Convert bot deployed date to datetime
+            if 'FIRST_BOT_DEPLOYED_DATE_PAID' in latest_snapshot.columns:
+                latest_snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'] = pd.to_datetime(latest_snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'], errors='coerce')
+            else:
+                latest_snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'] = pd.NaT
+
+            # Find instances with target date in the last week but no bot deployed
+            # Use PROJECTED_GO_LIVE_DATE as primary, fall back to TARGET_DEPLOY_DATE_LAST_WEEK
+            latest_snapshot['TARGET_DATE'] = latest_snapshot['PROJECTED_GO_LIVE_DATE'].fillna(latest_snapshot['TARGET_DEPLOY_DATE_LAST_WEEK'])
+
+            missed_targets_filter = (
+                (latest_snapshot['TARGET_DATE'] > one_week_ago) &
+                (latest_snapshot['TARGET_DATE'] <= latest_date) &
+                (latest_snapshot['FIRST_BOT_DEPLOYED_DATE_PAID'].isna())
+            )
+
+            missed_targets_df = latest_snapshot[missed_targets_filter].copy()
+
+            # Display count
+            st.metric("Instances with Missed Targets", len(missed_targets_df))
+
+            if len(missed_targets_df) > 0:
+                st.divider()
+                st.markdown("### 📋 Customers with Missed Target Dates")
+
+                # Aggregate by CRM account
+                missed_agg = missed_targets_df.groupby('CRM_ACCOUNT_ID').agg({
+                    'CRM_ACCOUNT_NAME': 'first',
+                    'INSTANCE_ACCOUNT_ID': 'first',
+                    'INSTANCE_ACCOUNT_SUBDOMAIN': 'first',
+                    'CRM_REGION': 'first',
+                    'CRM_ARR_BAND_BROAD': 'first',
+                    'CRM_MARKET_SEGMENT': 'first',
+                    'AI_STRATEGIST_NAME': 'first',
+                    'CONSULTANT_NAME': 'first',
+                    'TARGET_DATE': 'first',
+                    'PROJECTED_GO_LIVE_DATE': 'first',
+                    'CURRENT_PHASE': 'first',
+                    'COHORT': 'first'
+                }).reset_index()
+
+                # Rename columns for display
+                missed_display = missed_agg.rename(columns={
+                    'CRM_ACCOUNT_NAME': 'Account',
+                    'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance',
+                    'CRM_REGION': 'Region',
+                    'CRM_ARR_BAND_BROAD': 'ARR Band',
+                    'CRM_MARKET_SEGMENT': 'Segment',
+                    'AI_STRATEGIST_NAME': 'AI Strategist',
+                    'CONSULTANT_NAME': 'CSM',
+                    'TARGET_DATE': 'Target Date',
+                    'PROJECTED_GO_LIVE_DATE': 'Projected Go-Live',
+                    'CURRENT_PHASE': 'Current Phase',
+                    'COHORT': 'Cohort'
+                })
+
+                # Format dates for display
+                for date_col in ['Target Date', 'Projected Go-Live']:
+                    if date_col in missed_display.columns:
+                        missed_display[date_col] = pd.to_datetime(missed_display[date_col], errors='coerce').dt.strftime('%Y-%m-%d')
+
+                # Calculate days overdue
+                missed_display['Days Overdue'] = (latest_date - pd.to_datetime(missed_agg['TARGET_DATE'])).dt.days
+
+                # Sort by days overdue (descending) and account name
+                missed_display = missed_display.sort_values(['Days Overdue', 'Account'], ascending=[False, True])
+
+                # Select columns for display
+                display_columns = [
+                    'Account', 'Instance', 'Target Date', 'Days Overdue',
+                    'Region', 'ARR Band', 'Segment', 'Current Phase', 'Cohort',
+                    'AI Strategist', 'CSM'
+                ]
+                display_columns = [col for col in display_columns if col in missed_display.columns]
+
+                st.dataframe(
+                    missed_display[display_columns],
+                    use_container_width=True,
+                    height=400,
+                    hide_index=True
+                )
+
+                # Summary statistics
+                st.divider()
+                st.markdown("### 📊 Summary Statistics")
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_overdue = missed_display['Days Overdue'].mean()
+                    st.metric("Average Days Overdue", f"{avg_overdue:.1f}")
+                with col2:
+                    max_overdue = missed_display['Days Overdue'].max()
+                    st.metric("Max Days Overdue", f"{int(max_overdue)}")
+                with col3:
+                    unique_crms = missed_display['CRM_ACCOUNT_ID'].nunique()
+                    st.metric("Unique Accounts", unique_crms)
+
+                # Breakdown by region if available
+                if 'Region' in missed_display.columns:
+                    st.divider()
+                    st.markdown("### 🌍 Breakdown by Region")
+                    region_breakdown = missed_display.groupby('Region').agg({
+                        'CRM_ACCOUNT_ID': 'count',
+                        'Days Overdue': 'mean'
+                    }).reset_index()
+                    region_breakdown.columns = ['Region', 'Count', 'Avg Days Overdue']
+                    region_breakdown = region_breakdown.sort_values('Count', ascending=False)
+                    st.dataframe(region_breakdown, use_container_width=True, hide_index=True)
+
+                # Download button
+                st.divider()
+                st.download_button(
+                    label=":material/download: Download Missed Targets List (CSV)",
+                    data=missed_display.to_csv(index=False).encode('utf-8'),
+                    file_name=f"missed_target_dates_{latest_date.strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.success("✅ No customers missed their target deployment dates in the last week!")
 
     with tab5:
         st.subheader("Data Explorer")
