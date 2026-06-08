@@ -724,13 +724,16 @@ with st.sidebar:
         else:
             selected_region = 'All'
 
-        # ARR Band filter
+        # ARR Band filter (multi-select — empty = include all)
         if 'CRM_ARR_BAND_BROAD' in gdf.columns:
             arr_values = gdf['CRM_ARR_BAND_BROAD'].dropna().unique()
-            arr_bands = ['All'] + sorted([str(a) for a in arr_values if a is not None])
-            selected_arr_band = st.selectbox("ARR Band", arr_bands, key="arr_filter")
+            arr_bands = sorted([str(a) for a in arr_values if a is not None])
+            selected_arr_bands = st.multiselect(
+                "ARR Band", arr_bands, default=[], key="arr_filter",
+                help="Leave empty to include all bands. Select multiple to compare specific subsets.",
+            )
         else:
-            selected_arr_band = 'All'
+            selected_arr_bands = []
 
         # Responsibility filter
         if 'RESPONSIBILITY' in gdf.columns:
@@ -821,8 +824,8 @@ else:
     if 'selected_region' in locals() and selected_region != 'All':
         gdf = gdf[gdf['CRM_REGION'] == selected_region]
 
-    if 'selected_arr_band' in locals() and selected_arr_band != 'All':
-        gdf = gdf[gdf['CRM_ARR_BAND_BROAD'] == selected_arr_band]
+    if 'selected_arr_bands' in locals() and selected_arr_bands:
+        gdf = gdf[gdf['CRM_ARR_BAND_BROAD'].isin(selected_arr_bands)]
 
     if 'selected_responsibility' in locals() and selected_responsibility != 'All':
         gdf = gdf[gdf['RESPONSIBILITY'] == selected_responsibility]
