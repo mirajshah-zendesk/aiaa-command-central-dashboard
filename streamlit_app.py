@@ -724,13 +724,15 @@ with st.sidebar:
         else:
             selected_region = 'All'
 
-        # ARR Band filter (multi-select — empty = include all)
+        # ARR Band filter (multi-select — defaults to >=12K, hiding the
+        # noisy <12K band but letting users add it back if they want)
         if 'CRM_ARR_BAND_BROAD' in gdf.columns:
             arr_values = gdf['CRM_ARR_BAND_BROAD'].dropna().unique()
             arr_bands = sorted([str(a) for a in arr_values if a is not None])
+            arr_default = [b for b in arr_bands if b in ('b) 12K-100K', 'c) 100K+')]
             selected_arr_bands = st.multiselect(
-                "ARR Band", arr_bands, default=[], key="arr_filter",
-                help="Leave empty to include all bands. Select multiple to compare specific subsets.",
+                "ARR Band", arr_bands, default=arr_default, key="arr_filter",
+                help="Defaults to 12K+ ARR bands. Add `<12K` to include all customers, or remove a band to narrow further.",
             )
         else:
             selected_arr_bands = []
