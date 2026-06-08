@@ -1344,7 +1344,9 @@ else:
                         suffixes=('_Current', '_Previous')
                     )
 
-                    # Rename columns for clarity with shortened names
+                    # Rename columns for clarity with shortened names. The
+                    # AR Rate columns are means across all instances of the CRM
+                    # — flagged in the column label so the rollup is explicit.
                     lost_df = lost_df.rename(columns={
                         'CRM_ACCOUNT_NAME': 'Account',
                         'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance',
@@ -1353,17 +1355,17 @@ else:
                         'CRM_MARKET_SEGMENT': 'Segment',
                         'AI_STRATEGIST_NAME': 'AI Strategist',
                         'CONSULTANT_NAME': 'CSM',
-                        'AR_RATE_PAID_Current': 'Current AR Rate',
-                        'AR_RATE_PAID_Previous': 'Previous AR Rate',
-                        'AUTOMATED_RESOLUTIONS_PAID_Current': 'Current ARs (28d)',
-                        'AUTOMATED_RESOLUTIONS_PAID_Previous': 'Previous ARs (28d)',
+                        'AR_RATE_PAID_Current': 'Avg AR Rate (Current)',
+                        'AR_RATE_PAID_Previous': 'Avg AR Rate (Previous)',
+                        'AUTOMATED_RESOLUTIONS_PAID_Current': 'Total ARs (Current, 28d)',
+                        'AUTOMATED_RESOLUTIONS_PAID_Previous': 'Total ARs (Previous, 28d)',
                         'BOT_INTERACTIONS_PAID_Current': 'Current Bot Interactions',
                         'BOT_INTERACTIONS_PAID_Previous': 'Previous Bot Interactions'
                     })
 
                     # Calculate changes for categorization
-                    lost_df['AR_Rate_PP_Change'] = (lost_df['Current AR Rate'] - lost_df['Previous AR Rate'])
-                    lost_df['AR_Count_Change'] = lost_df['Current ARs (28d)'] - lost_df['Previous ARs (28d)']
+                    lost_df['AR_Rate_PP_Change'] = (lost_df['Avg AR Rate (Current)'] - lost_df['Avg AR Rate (Previous)'])
+                    lost_df['AR_Count_Change'] = lost_df['Total ARs (Current, 28d)'] - lost_df['Total ARs (Previous, 28d)']
                     lost_df['Bot_Interactions_Pct_Change'] = (
                         (lost_df['Current Bot Interactions'] - lost_df['Previous Bot Interactions']) /
                         lost_df['Previous Bot Interactions'].replace(0, 1)  # Avoid division by zero
@@ -1372,7 +1374,7 @@ else:
                     # Apply waterfall categorization logic
                     def categorize_loss(row):
                         # 1. No Longer Activated: fewer than 100 ARs
-                        if row['Current ARs (28d)'] < 100:
+                        if row['Total ARs (Current, 28d)'] < 100:
                             return "No Longer Activated"
 
                         # 2. Increased Deployment: AR count hasn't dropped but bot interactions increased >20%
@@ -1388,7 +1390,7 @@ else:
                             return "Performance Decline"
 
                         # 5. Yoyo: AR rate is >25%
-                        if row['Current AR Rate'] > 0.25:
+                        if row['Avg AR Rate (Current)'] > 0.25:
                             return "Yoyo"
 
                         return "Other"
@@ -1409,8 +1411,8 @@ else:
                     column_order = [
                         'CRM_ACCOUNT_ID', 'Account', 'INSTANCE_ACCOUNT_ID', 'Instance',
                         'Category', 'Region', 'ARR Band', 'Segment', 'AI Strategist', 'CSM',
-                        'Current AR Rate', 'Previous AR Rate',
-                        'Current ARs (28d)', 'Previous ARs (28d)',
+                        'Avg AR Rate (Current)', 'Avg AR Rate (Previous)',
+                        'Total ARs (Current, 28d)', 'Total ARs (Previous, 28d)',
                         'Current Bot Interactions', 'Previous Bot Interactions',
                         'AR_Rate_PP_Change', 'AR_Count_Change', 'Bot_Interactions_Pct_Change',
                         'Notes'
@@ -1419,19 +1421,78 @@ else:
 
                     # Create display dataframe with formatted values
                     lost_df_display = lost_df.copy()
-                    lost_df_display['Current AR Rate'] = lost_df_display['Current AR Rate'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
-                    lost_df_display['Previous AR Rate'] = lost_df_display['Previous AR Rate'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
-                    lost_df_display['Current ARs (28d)'] = lost_df_display['Current ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
-                    lost_df_display['Previous ARs (28d)'] = lost_df_display['Previous ARs (28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
+                    lost_df_display['Avg AR Rate (Current)'] = lost_df_display['Avg AR Rate (Current)'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    lost_df_display['Avg AR Rate (Previous)'] = lost_df_display['Avg AR Rate (Previous)'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                    lost_df_display['Total ARs (Current, 28d)'] = lost_df_display['Total ARs (Current, 28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
+                    lost_df_display['Total ARs (Previous, 28d)'] = lost_df_display['Total ARs (Previous, 28d)'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
 
-                    # Select columns for display (remove IDs, calculation columns, and Notes)
+                    st.caption(
+                        "Each row is a CRM account. AR Rate columns are **averaged** across all instances of "
+                        "the CRM and AR counts are **summed**. Expand the per-instance breakdown below the "
+                        "table to see which instance(s) drove the change."
+                    )
+
+                    # Select columns for display (CRM-level only — instance is in the breakdown)
                     display_columns = [
-                        'Account', 'Instance', 'Category', 'Region', 'ARR Band', 'Segment',
+                        'Account', 'Category', 'Region', 'ARR Band', 'Segment',
                         'AI Strategist', 'CSM',
-                        'Current AR Rate', 'Previous AR Rate',
-                        'Current ARs (28d)', 'Previous ARs (28d)'
+                        'Avg AR Rate (Current)', 'Avg AR Rate (Previous)',
+                        'Total ARs (Current, 28d)', 'Total ARs (Previous, 28d)'
                     ]
                     st.dataframe(lost_df_display[display_columns], use_container_width=True, height=400, hide_index=True)
+
+                    # ===== Per-instance breakdown =====
+                    with st.expander(":material/zoom_in: Per-instance breakdown", expanded=False):
+                        st.caption(
+                            "Per-instance AR rate and AR count for each CRM in the table above. Use this to see which "
+                            "instance(s) drove the CRM-level change."
+                        )
+                        # Build the per-instance comparison dataframe
+                        inst_cols = ['CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
+                                     'AR_RATE_PAID', 'AUTOMATED_RESOLUTIONS_PAID']
+                        inst_latest = lost_customers_latest[inst_cols].rename(columns={
+                            'AR_RATE_PAID': 'AR Rate (Current)',
+                            'AUTOMATED_RESOLUTIONS_PAID': 'ARs (Current, 28d)',
+                        })
+                        inst_prev = lost_customers_prev[['CRM_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN',
+                                                         'AR_RATE_PAID', 'AUTOMATED_RESOLUTIONS_PAID']].rename(columns={
+                            'AR_RATE_PAID': 'AR Rate (Previous)',
+                            'AUTOMATED_RESOLUTIONS_PAID': 'ARs (Previous, 28d)',
+                        })
+                        inst_combined = inst_latest.merge(
+                            inst_prev,
+                            on=['CRM_ACCOUNT_ID', 'INSTANCE_ACCOUNT_SUBDOMAIN'],
+                            how='outer',
+                        )
+                        inst_combined = inst_combined.rename(columns={
+                            'CRM_ACCOUNT_NAME': 'Account',
+                            'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance',
+                        })
+                        # If a CRM only has the previous-row but not latest, fill the Account from the lost_df.
+                        crm_to_account = dict(zip(lost_df['CRM_ACCOUNT_ID'], lost_df['Account']))
+                        inst_combined['Account'] = inst_combined['Account'].fillna(
+                            inst_combined['CRM_ACCOUNT_ID'].map(crm_to_account)
+                        )
+                        inst_combined = inst_combined.sort_values(['Account', 'Instance'])
+                        inst_combined['AR Rate (Current)'] = inst_combined['AR Rate (Current)'].apply(
+                            lambda x: f"{x:.1%}" if pd.notna(x) else "—"
+                        )
+                        inst_combined['AR Rate (Previous)'] = inst_combined['AR Rate (Previous)'].apply(
+                            lambda x: f"{x:.1%}" if pd.notna(x) else "—"
+                        )
+                        inst_combined['ARs (Current, 28d)'] = inst_combined['ARs (Current, 28d)'].apply(
+                            lambda x: f"{int(x):,}" if pd.notna(x) else "0"
+                        )
+                        inst_combined['ARs (Previous, 28d)'] = inst_combined['ARs (Previous, 28d)'].apply(
+                            lambda x: f"{int(x):,}" if pd.notna(x) else "0"
+                        )
+                        st.dataframe(
+                            inst_combined[['Account', 'Instance', 'AR Rate (Current)', 'AR Rate (Previous)',
+                                            'ARs (Current, 28d)', 'ARs (Previous, 28d)']],
+                            use_container_width=True,
+                            height=400,
+                            hide_index=True,
+                        )
 
                     st.divider()
 
