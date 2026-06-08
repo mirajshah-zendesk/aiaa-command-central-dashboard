@@ -4,7 +4,7 @@
 set -euo pipefail
 
 snow streamlit deploy --replace \
-  -c default \
+  -c ZENDESK-GLOBAL \
   --database STREAMLIT_APPS \
   --schema AIAA_COMMAND_CENTRAL \
   --role STREAMLIT_APP_ADMIN_ROLE
