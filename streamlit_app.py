@@ -408,37 +408,37 @@ def calculate_scorecard_metrics(df):
         # This filter is used for both adopted AND eligible metrics
         eligible_tenure_filter = snapshot['60+ Day Tenure?'] == True
 
-        # Adopted customers (CRM grain) - MUST have 60+ day tenure
-        # Formula: Count customers where they're adopted for their product type
-        # For Advanced: use ADVANCED_ADOPTED; For Essentials: use PAID_ADOPTED
+        # Adopted customers (CRM grain) — AIA Paid adopted AND Paid penetrated AND 60+ day tenure
         crm_adopted_filter = (
-            ((snapshot['CRM_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True) & (snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)) |
-            ((snapshot['CRM_IS_AI_AGENTS_PAID_ADOPTED'] == True) & (snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True) & (snapshot['CRM_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False))
-        ) & eligible_tenure_filter
+            (snapshot['CRM_IS_AI_AGENTS_PAID_ADOPTED'] == True)
+            & (snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+            & eligible_tenure_filter
+        )
         metrics['Adopted customers'] = snapshot[crm_adopted_filter]['CRM_ACCOUNT_ID'].nunique()
 
-        # Adopted instances (Instance grain) - MUST have 60+ day tenure
+        # Adopted instances (Instance grain) — AIA Paid adopted AND Paid penetrated AND 60+ day tenure
         instance_adopted_filter = (
-            ((snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_ADOPTED'] == True) & (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)) |
-            ((snapshot['INSTANCE_IS_AI_AGENTS_PAID_ADOPTED'] == True) & (snapshot['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True) & (snapshot['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == False))
-        ) & eligible_tenure_filter
+            (snapshot['INSTANCE_IS_AI_AGENTS_PAID_ADOPTED'] == True)
+            & (snapshot['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+            & eligible_tenure_filter
+        )
         metrics['Adopted instances'] = snapshot[instance_adopted_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # $100k+ ARR adopted customers
         adopted_100k_filter = crm_adopted_filter & (snapshot['CRM_ARR_BAND_BROAD'] == 'c) 100K+')
         metrics['Adopted customers ($100k+)'] = snapshot[adopted_100k_filter]['CRM_ACCOUNT_ID'].nunique()
 
-        # Eligible customers (CRM grain, 60+ day tenure)
-        # Note: Data already filtered by product type, just apply tenure filter
-        eligible_cust_filter = eligible_tenure_filter
+        # Eligible customers (CRM grain) — AIA Paid penetrated AND 60+ day tenure
+        eligible_cust_filter = (snapshot['CRM_IS_AI_AGENTS_PAID_PENETRATED'] == True) & eligible_tenure_filter
         metrics['Eligible customers'] = snapshot[eligible_cust_filter]['CRM_ACCOUNT_ID'].nunique()
 
         # Eligible customers ($100k+)
         eligible_100k_filter = eligible_cust_filter & (snapshot['CRM_ARR_BAND_BROAD'] == 'c) 100K+')
-        metrics['Eligible customers ($100k+)'] = snapshot[eligible_cust_filter & (snapshot['CRM_ARR_BAND_BROAD'] == 'c) 100K+')]['CRM_ACCOUNT_ID'].nunique()
+        metrics['Eligible customers ($100k+)'] = snapshot[eligible_100k_filter]['CRM_ACCOUNT_ID'].nunique()
 
-        # Eligible instances (Instance grain, 60+ day tenure)
-        metrics['Eligible instances'] = snapshot[eligible_tenure_filter]['INSTANCE_ACCOUNT_ID'].nunique()
+        # Eligible instances (Instance grain) — AIA Paid penetrated AND 60+ day tenure
+        eligible_inst_filter = (snapshot['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True) & eligible_tenure_filter
+        metrics['Eligible instances'] = snapshot[eligible_inst_filter]['INSTANCE_ACCOUNT_ID'].nunique()
 
         # Adoption rates
         if metrics['Eligible customers'] > 0:
