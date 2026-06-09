@@ -463,8 +463,9 @@ def calculate_scorecard_metrics(df):
         else:
             metrics['Median AR Rate'] = 0
 
-        # AR Utilization Run Rate - Complex formula with multiple filters
-        # Formula: SUM(AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED) / SUM(PRORATED_ALLOWANCE_LAST_28D)
+        # AR Utilization metrics — both 28-day run rate and cycle-to-date
+        # Formula (28-day run rate): SUM(AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED) / SUM(PRORATED_ALLOWANCE_LAST_28D)
+        # Formula (cycle-to-date): SUM(AUTOMATED_RESOLUTIONS_USED_NORMALIZED) / SUM(PRORATED_TOTAL_ALLOWANCE)
         # Where: ARR>0, ALLOWANCE_PERIOD>=12, DAYS_INTO_CYCLE>28, TOTAL_ALLOWANCE<1M
         # Note: Data already filtered by product type
         ar_util_filter = (
@@ -474,14 +475,18 @@ def calculate_scorecard_metrics(df):
             (snapshot['TOTAL_ALLOWANCE'] < 1000000)
         )
         if ar_util_filter.sum() > 0:
-            numerator = snapshot[ar_util_filter]['AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED'].sum()
-            denominator = snapshot[ar_util_filter]['PRORATED_ALLOWANCE_LAST_28D'].sum()
-            if denominator > 0:
-                metrics['AR Utilization Run Rate'] = numerator / denominator
-            else:
-                metrics['AR Utilization Run Rate'] = 0
+            ar_util_rows = snapshot[ar_util_filter]
+            # 28-day run rate
+            num_28d = ar_util_rows['AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED'].sum()
+            den_28d = ar_util_rows['PRORATED_ALLOWANCE_LAST_28D'].sum()
+            metrics['AR Utilization Run Rate'] = (num_28d / den_28d) if den_28d > 0 else 0
+            # Cycle-to-date utilization
+            num_ctd = ar_util_rows['AUTOMATED_RESOLUTIONS_USED_NORMALIZED'].sum()
+            den_ctd = ar_util_rows['PRORATED_TOTAL_ALLOWANCE'].sum()
+            metrics['AR Utilization Cycle-to-Date'] = (num_ctd / den_ctd) if den_ctd > 0 else 0
         else:
             metrics['AR Utilization Run Rate'] = 0
+            metrics['AR Utilization Cycle-to-Date'] = 0
 
         # Channel-specific AR rates (only instances with > 0 ARs)
         email_ar_filter = snapshot['EMAIL_AR_RATE_PAID'] > 0
@@ -1039,7 +1044,8 @@ else:
             # Define metrics by category
             metrics_config = {
                 "📊 Business Metrics": [
-                    ("AR Utilization Run Rate", "AR Utilization Run Rate", "percent"),
+                    ("AR Utilization Run Rate (28d)", "AR Utilization Run Rate", "percent"),
+                    ("AR Utilization Cycle-to-Date", "AR Utilization Cycle-to-Date", "percent"),
                 ],
                 "🎯 Impact Metrics": [
                     ("# Customers", "# customers", "number"),
@@ -1115,6 +1121,32 @@ else:
                 metrics_table = pd.DataFrame(table_data)
                 metrics_table = metrics_table.set_index('Metric')
                 st.dataframe(metrics_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 400))
+
+                # AR Utilization metric definitions — clarify the difference
+                # between the 28-day run rate and cycle-to-date views.
+                if category == "📊 Business Metrics":
+                    with st.expander("ℹ️ AR Utilization metric definitions", expanded=False):
+                        st.markdown(
+                            """
+**AR Utilization Run Rate (28d)** — *current momentum* view.
+Formula: `SUM(LEAST(prorated_28d_allowance, ARs_used_last_28d)) / SUM(prorated_28d_allowance)`
+Asks: "At their burn rate over the last 28 days, what % of allowance are customers consuming?"
+This is the metric to watch when you want to know whether adoption is *accelerating, stalling, or declining right now*.
+
+**AR Utilization Cycle-to-Date** — *running scorecard* view.
+Formula: `SUM(LEAST(prorated_total_allowance, ARs_used)) / SUM(prorated_total_allowance)`
+Asks: "How much of their cycle's allowance have customers used by now, vs. how much they should have used by this point?"
+This is the metric to watch when you want to know who's pacing toward overages or under-consumption by end of cycle.
+
+**Why the two numbers can diverge:**
+- A customer who started slow and is ramping recently → low cycle-to-date, high 28-day run rate.
+- A customer who used their allowance early and slowed → high cycle-to-date, low 28-day run rate.
+
+**Universe (both metrics):** AIA Paid–penetrated instances, paying for the AR SKU, with annual cycles, 28+ days into their cycle, and total allowance under 1M ARs (excludes Rockstar-tier outliers).
+
+**Both metrics use the same per-instance normalization** — each instance is capped at 100% of its prorated allowance so a single large customer can't drag the weighted average past 100%.
+"""
+                        )
 
             st.divider()
 
