@@ -792,6 +792,19 @@ with st.sidebar:
         else:
             selected_industry = 'All'
 
+        # AI Expert Project filter — does the CRM have an AIE project?
+        # Uses the same per-CRM project resolver as the ICL tab.
+        selected_aie_project = st.selectbox(
+            "AI Expert Project",
+            options=['All', 'Has AIE Project', 'No AIE Project'],
+            index=0,
+            key="aie_project_filter",
+            help="Filter to CRMs with (or without) an AI Expert project. "
+                 "A CRM 'has' a project if it has any row in salesforce_pse_proj_c_bcv "
+                 "with name ILIKE '%AI Expert%' (canonical project picked by the same "
+                 "tiebreaker as the ICL tab).",
+        )
+
         # AI Agents Product filter (multi-select)
         st.markdown("**AI Agents Product**")
         ai_product_options = st.multiselect(
@@ -863,6 +876,20 @@ else:
 
     if 'selected_industry' in locals() and selected_industry != 'All':
         gdf = gdf[gdf['CRM_INDUSTRY'] == selected_industry]
+
+    # AI Expert Project filter — membership test against the canonical
+    # one-row-per-CRM AIE project set.
+    if 'selected_aie_project' in locals() and selected_aie_project != 'All':
+        aie_health_df, _ = load_aie_project_health()
+        if aie_health_df is not None and 'CRM_ACCOUNT_ID' in aie_health_df.columns:
+            aie_crms = set(aie_health_df['CRM_ACCOUNT_ID'].astype(str).str.strip())
+        else:
+            aie_crms = set()
+        crm_ids = gdf['CRM_ACCOUNT_ID'].astype(str).str.strip()
+        if selected_aie_project == 'Has AIE Project':
+            gdf = gdf[crm_ids.isin(aie_crms)]
+        elif selected_aie_project == 'No AIE Project':
+            gdf = gdf[~crm_ids.isin(aie_crms)]
 
     # AI Agents Product filter (multi-select with hierarchy)
     if 'ai_product_options' in locals() and len(ai_product_options) > 0:
