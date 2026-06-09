@@ -2744,12 +2744,15 @@ else:
                     # restricted to currently-AIA-penetrated instances. This
                     # is the "AIA universe" — CRMs with at least one paid- or
                     # advanced-penetrated instance today.
+                    # Defensively coerce penetration flags to bool — Snowflake
+                    # via Streamlit can return them as object/string dtype
+                    # depending on the runtime, which makes `== True` silently
+                    # match nothing.
+                    paid_pen_flag = mart_full['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'].apply(lambda x: x is True or str(x).lower() == 'true')
+                    adv_pen_flag = mart_full['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'].apply(lambda x: x is True or str(x).lower() == 'true')
                     latest_mart = mart_full[
                         (mart_full['SOURCE_SNAPSHOT_DATE'] == latest_snap)
-                        & (
-                            (mart_full['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
-                            | (mart_full['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)
-                        )
+                        & (paid_pen_flag | adv_pen_flag)
                     ].copy()
                     enrichment_cols = [
                         'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
