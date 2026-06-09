@@ -2749,8 +2749,9 @@ else:
                         'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
                         'CRM_NET_ARR_USD', 'CRM_ARR_BAND_BROAD', 'CRM_REGION', 'CRM_MARKET_SEGMENT',
                         'CONSULTANT_NAME', 'AI_STRATEGIST_NAME',
-                        'CRM_IS_AI_AGENTS_ADVANCED_ADOPTED', 'CRM_IS_AI_AGENTS_PAID_ADOPTED',
-                        'CRM_IS_AI_AGENTS_ADVANCED_PENETRATED', 'CRM_IS_AI_AGENTS_PAID_PENETRATED',
+                        'CRM_IS_AI_AGENTS_PAID_ADOPTED',
+                        'CRM_IS_AI_AGENTS_PAID_ACTIVATED',
+                        'CRM_IS_AI_AGENTS_PAID_PENETRATED',
                     ]
                     enrichment_cols = [c for c in enrichment_cols if c in latest_mart.columns]
                     # Collapse to one row per CRM (subdomain becomes a comma-separated list)
@@ -2766,19 +2767,20 @@ else:
                     crm_enrichment['CRM_ACCOUNT_ID'] = crm_enrichment['CRM_ACCOUNT_ID'].astype(str).str.strip()
                     merged = new_signals.merge(crm_enrichment, on='CRM_ACCOUNT_ID', how='inner')
 
-                    # Derive a current AIA adoption status for each CRM
+                    # Derive a current AIA adoption status for each CRM, using
+                    # the Paid SKU progression (highest stage wins).
+                    def _flag_truthy(v):
+                        return v is True or str(v).lower() in ('true', '1', 't')
                     def aia_status(row):
-                        if row.get('CRM_IS_AI_AGENTS_ADVANCED_ADOPTED') is True:
-                            return 'Advanced adopted'
-                        if row.get('CRM_IS_AI_AGENTS_PAID_ADOPTED') is True:
+                        if _flag_truthy(row.get('CRM_IS_AI_AGENTS_PAID_ADOPTED')):
                             return 'Paid adopted'
-                        if row.get('CRM_IS_AI_AGENTS_ADVANCED_PENETRATED') is True:
-                            return 'Advanced penetrated'
-                        if row.get('CRM_IS_AI_AGENTS_PAID_PENETRATED') is True:
+                        if _flag_truthy(row.get('CRM_IS_AI_AGENTS_PAID_ACTIVATED')):
+                            return 'Paid activated'
+                        if _flag_truthy(row.get('CRM_IS_AI_AGENTS_PAID_PENETRATED')):
                             return 'Paid penetrated'
                         return 'Not penetrated'
 
-                    if all(c in merged.columns for c in ('CRM_IS_AI_AGENTS_ADVANCED_ADOPTED', 'CRM_IS_AI_AGENTS_PAID_ADOPTED')):
+                    if 'CRM_IS_AI_AGENTS_PAID_PENETRATED' in merged.columns:
                         merged['AIA Adoption Status'] = merged.apply(aia_status, axis=1)
                     else:
                         merged['AIA Adoption Status'] = 'unknown'
