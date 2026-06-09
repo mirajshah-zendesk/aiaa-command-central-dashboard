@@ -317,8 +317,8 @@ def load_spiff_team_mapping(_v=3):
     except Exception as e:
         return None, str(e)
 
-@st.cache_data(ttl=3600)
-def load_third_party_bot_first_seen(_v=1):
+@st.cache_data(ttl=300)
+def load_third_party_bot_first_seen(_v=2):
     """One row per (crm_account_id, third_party_ai_bot) with first/last seen
     dates. Used by the New Third-Party Bot Signals tab to identify NEW
     (specific bot, CRM) pairs whose first appearance is recent.
