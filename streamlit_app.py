@@ -2725,6 +2725,18 @@ else:
                     & (tpb_df['FIRST_SEEN_DATE'] <= latest_snap)
                 ].copy()
 
+                # TEMP DEBUG — remove once we've confirmed the tab works
+                with st.expander("🔧 Debug info (temporary)", expanded=False):
+                    st.write(f"tpb_df rows: {len(tpb_df)}, columns: {list(tpb_df.columns)}")
+                    st.write(f"window_start: {window_start}, latest_snap: {latest_snap}")
+                    st.write(f"new_signals rows: {len(new_signals)}")
+                    if len(tpb_df) > 0:
+                        st.write("tpb_df sample (first 3 rows):")
+                        st.dataframe(tpb_df.head(3))
+                    if len(new_signals) > 0:
+                        st.write("new_signals sample (first 5 rows):")
+                        st.dataframe(new_signals.head(5))
+
                 if len(new_signals) == 0:
                     st.info("No new third-party AI Agent signals detected in the latest mart-snapshot week.")
                 else:
@@ -2756,9 +2768,21 @@ else:
                     # Inner join so we ONLY surface CRMs that are in the AIA
                     # universe (i.e., paid- or advanced-penetrated). CRMs with
                     # 3PB signal but no AIA penetration get filtered out.
-                    new_signals['CRM_ACCOUNT_ID'] = new_signals['CRM_ACCOUNT_ID'].astype(str)
-                    crm_enrichment['CRM_ACCOUNT_ID'] = crm_enrichment['CRM_ACCOUNT_ID'].astype(str)
+                    new_signals['CRM_ACCOUNT_ID'] = new_signals['CRM_ACCOUNT_ID'].astype(str).str.strip()
+                    crm_enrichment['CRM_ACCOUNT_ID'] = crm_enrichment['CRM_ACCOUNT_ID'].astype(str).str.strip()
                     merged = new_signals.merge(crm_enrichment, on='CRM_ACCOUNT_ID', how='inner')
+
+                    # TEMP DEBUG
+                    with st.expander("🔧 Merge debug (temporary)", expanded=False):
+                        st.write(f"new_signals.CRM_ACCOUNT_ID dtype: {new_signals['CRM_ACCOUNT_ID'].dtype}")
+                        st.write(f"crm_enrichment.CRM_ACCOUNT_ID dtype: {crm_enrichment['CRM_ACCOUNT_ID'].dtype}")
+                        st.write(f"new_signals first 3 CRMs: {new_signals['CRM_ACCOUNT_ID'].head(3).tolist()}")
+                        st.write(f"crm_enrichment rows: {len(crm_enrichment)}, first 3 CRMs: {crm_enrichment['CRM_ACCOUNT_ID'].head(3).tolist()}")
+                        st.write(f"merged rows: {len(merged)}")
+                        # Check overlap
+                        ns_ids = set(new_signals['CRM_ACCOUNT_ID'])
+                        ce_ids = set(crm_enrichment['CRM_ACCOUNT_ID'])
+                        st.write(f"new_signals distinct CRMs: {len(ns_ids)}, crm_enrichment distinct CRMs: {len(ce_ids)}, overlap: {len(ns_ids & ce_ids)}")
 
                     # Derive a current AIA adoption status for each CRM
                     def aia_status(row):
