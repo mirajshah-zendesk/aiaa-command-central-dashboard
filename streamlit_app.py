@@ -901,7 +901,7 @@ else:
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab_missed_targets, tab5, tab_icl, tab6, tab7, tab_spiff, tab_3pb = st.tabs([
+    tab1, tab2, tab3, tab4, tab_missed_targets, tab5, tab_icl, tab_3pb, tab6, tab7, tab_spiff = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
@@ -909,10 +909,10 @@ else:
         ":material/schedule: Missed Target Dates",
         ":material/table: Data Explorer",
         ":material/list_alt: Integrated Cohort List",
+        ":material/smart_toy: New Third-Party Bot Signals",
         ":material/info: Metrics Guide",
         ":material/rocket_launch: Kickoff Analysis",
-        ":material/emoji_events: SPIFF Leaderboard",
-        ":material/smart_toy: New Third-Party Bot Signals"
+        ":material/emoji_events: SPIFF Leaderboard"
     ])
 
     with tab1:
@@ -2728,8 +2728,17 @@ else:
                 if len(new_signals) == 0:
                     st.info("No new third-party AI Agent signals detected in the latest mart-snapshot week.")
                 else:
-                    # Pull CRM enrichment from the latest mart snapshot.
-                    latest_mart = mart_full[mart_full['SOURCE_SNAPSHOT_DATE'] == latest_snap].copy()
+                    # Pull CRM enrichment from the latest mart snapshot,
+                    # restricted to currently-AIA-penetrated instances. This
+                    # is the "AIA universe" — CRMs with at least one paid- or
+                    # advanced-penetrated instance today.
+                    latest_mart = mart_full[
+                        (mart_full['SOURCE_SNAPSHOT_DATE'] == latest_snap)
+                        & (
+                            (mart_full['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'] == True)
+                            | (mart_full['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'] == True)
+                        )
+                    ].copy()
                     enrichment_cols = [
                         'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
                         'CRM_NET_ARR_USD', 'CRM_ARR_BAND_BROAD', 'CRM_REGION', 'CRM_MARKET_SEGMENT',
@@ -2743,10 +2752,13 @@ else:
                         lambda s: ', '.join(sorted(set(str(x) for x in s.dropna()))) if s.name == 'INSTANCE_ACCOUNT_SUBDOMAIN' else s.iloc[0]
                     )
 
-                    # Force matching dtypes for merge
+                    # Force matching dtypes for merge.
+                    # Inner join so we ONLY surface CRMs that are in the AIA
+                    # universe (i.e., paid- or advanced-penetrated). CRMs with
+                    # 3PB signal but no AIA penetration get filtered out.
                     new_signals['CRM_ACCOUNT_ID'] = new_signals['CRM_ACCOUNT_ID'].astype(str)
                     crm_enrichment['CRM_ACCOUNT_ID'] = crm_enrichment['CRM_ACCOUNT_ID'].astype(str)
-                    merged = new_signals.merge(crm_enrichment, on='CRM_ACCOUNT_ID', how='left')
+                    merged = new_signals.merge(crm_enrichment, on='CRM_ACCOUNT_ID', how='inner')
 
                     # Derive a current AIA adoption status for each CRM
                     def aia_status(row):
