@@ -2704,8 +2704,11 @@ else:
         if st.session_state.global_data is None or len(st.session_state.global_data) == 0:
             st.warning("No data loaded yet.")
         else:
-            mart_full = st.session_state.global_data
-            latest_snap = pd.Timestamp(mart_full['SOURCE_SNAPSHOT_DATE'].max())
+            mart_full = st.session_state.global_data.copy()
+            # Snowpark returns DATE as object/datetime.date — coerce to
+            # datetime64 so the snapshot-date filter below actually matches.
+            mart_full['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(mart_full['SOURCE_SNAPSHOT_DATE'])
+            latest_snap = mart_full['SOURCE_SNAPSHOT_DATE'].max()
             window_start = latest_snap - pd.Timedelta(days=6)  # 7-day window inclusive
             st.markdown(
                 f"**Window:** {window_start.strftime('%Y-%m-%d')} → {latest_snap.strftime('%Y-%m-%d')}  \n"
@@ -2725,18 +2728,6 @@ else:
                     & (tpb_df['FIRST_SEEN_DATE'] <= latest_snap)
                 ].copy()
 
-                # TEMP DEBUG — remove once we've confirmed the tab works
-                with st.expander("🔧 Debug info (temporary)", expanded=False):
-                    st.write(f"tpb_df rows: {len(tpb_df)}, columns: {list(tpb_df.columns)}")
-                    st.write(f"window_start: {window_start}, latest_snap: {latest_snap}")
-                    st.write(f"new_signals rows: {len(new_signals)}")
-                    if len(tpb_df) > 0:
-                        st.write("tpb_df sample (first 3 rows):")
-                        st.dataframe(tpb_df.head(3))
-                    if len(new_signals) > 0:
-                        st.write("new_signals sample (first 5 rows):")
-                        st.dataframe(new_signals.head(5))
-
                 if len(new_signals) == 0:
                     st.info("No new third-party AI Agent signals detected in the latest mart-snapshot week.")
                 else:
@@ -2744,16 +2735,16 @@ else:
                     # restricted to currently-AIA-penetrated instances. This
                     # is the "AIA universe" — CRMs with at least one paid- or
                     # advanced-penetrated instance today.
-                    # Defensively coerce penetration flags to bool — Snowflake
-                    # via Streamlit can return them as object/string dtype
-                    # depending on the runtime, which makes `== True` silently
-                    # match nothing.
-                    paid_pen_flag = mart_full['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'].apply(lambda x: x is True or str(x).lower() == 'true')
-                    adv_pen_flag = mart_full['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'].apply(lambda x: x is True or str(x).lower() == 'true')
-                    latest_mart = mart_full[
-                        (mart_full['SOURCE_SNAPSHOT_DATE'] == latest_snap)
-                        & (paid_pen_flag | adv_pen_flag)
-                    ].copy()
+                    latest_mart = mart_full[mart_full['SOURCE_SNAPSHOT_DATE'] == latest_snap].copy()
+
+                    # Coerce penetration flags to bool — Snowpark can return
+                    # them as bool, int 1/0, or string 'True'/'False' depending
+                    # on driver path, which made `== True` silently match nothing.
+                    def _truthy(s):
+                        return s.astype(str).str.lower().isin(['true', '1', 't'])
+                    paid_pen_flag = _truthy(latest_mart['INSTANCE_IS_AI_AGENTS_PAID_PENETRATED'])
+                    adv_pen_flag = _truthy(latest_mart['INSTANCE_IS_AI_AGENTS_ADVANCED_PENETRATED'])
+                    latest_mart = latest_mart[paid_pen_flag | adv_pen_flag].copy()
                     enrichment_cols = [
                         'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
                         'CRM_NET_ARR_USD', 'CRM_ARR_BAND_BROAD', 'CRM_REGION', 'CRM_MARKET_SEGMENT',
@@ -2774,18 +2765,6 @@ else:
                     new_signals['CRM_ACCOUNT_ID'] = new_signals['CRM_ACCOUNT_ID'].astype(str).str.strip()
                     crm_enrichment['CRM_ACCOUNT_ID'] = crm_enrichment['CRM_ACCOUNT_ID'].astype(str).str.strip()
                     merged = new_signals.merge(crm_enrichment, on='CRM_ACCOUNT_ID', how='inner')
-
-                    # TEMP DEBUG
-                    with st.expander("🔧 Merge debug (temporary)", expanded=False):
-                        st.write(f"new_signals.CRM_ACCOUNT_ID dtype: {new_signals['CRM_ACCOUNT_ID'].dtype}")
-                        st.write(f"crm_enrichment.CRM_ACCOUNT_ID dtype: {crm_enrichment['CRM_ACCOUNT_ID'].dtype}")
-                        st.write(f"new_signals first 3 CRMs: {new_signals['CRM_ACCOUNT_ID'].head(3).tolist()}")
-                        st.write(f"crm_enrichment rows: {len(crm_enrichment)}, first 3 CRMs: {crm_enrichment['CRM_ACCOUNT_ID'].head(3).tolist()}")
-                        st.write(f"merged rows: {len(merged)}")
-                        # Check overlap
-                        ns_ids = set(new_signals['CRM_ACCOUNT_ID'])
-                        ce_ids = set(crm_enrichment['CRM_ACCOUNT_ID'])
-                        st.write(f"new_signals distinct CRMs: {len(ns_ids)}, crm_enrichment distinct CRMs: {len(ce_ids)}, overlap: {len(ns_ids & ce_ids)}")
 
                     # Derive a current AIA adoption status for each CRM
                     def aia_status(row):
