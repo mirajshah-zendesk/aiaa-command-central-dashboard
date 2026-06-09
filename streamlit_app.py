@@ -317,6 +317,29 @@ def load_spiff_team_mapping(_v=3):
     except Exception as e:
         return None, str(e)
 
+@st.cache_data(ttl=3600)
+def load_third_party_bot_first_seen(_v=1):
+    """One row per (crm_account_id, third_party_ai_bot) with first/last seen
+    dates. Used by the New Third-Party Bot Signals tab to identify NEW
+    (specific bot, CRM) pairs whose first appearance is recent.
+    """
+    try:
+        session = get_active_session()
+        query = """
+        SELECT
+            crm_account_id,
+            third_party_ai_bot,
+            MIN(source_snapshot_date) AS first_seen_date,
+            MAX(source_snapshot_date) AS last_seen_date
+        FROM functional.product_analytics.third_party_bot_usage_crm_daily_snapshot
+        GROUP BY 1, 2
+        """
+        df = session.sql(query).to_pandas()
+        df.columns = [c.upper() for c in df.columns]
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
 def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
     return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -878,7 +901,7 @@ else:
         gdf_filtered = gdf_filtered[gdf_filtered['SOURCE_SNAPSHOT_DATE'] == pd.to_datetime(display_selected_date)]
 
     # Create tabs
-    tab1, tab2, tab3, tab4, tab_missed_targets, tab5, tab_icl, tab6, tab7, tab_spiff = st.tabs([
+    tab1, tab2, tab3, tab4, tab_missed_targets, tab5, tab_icl, tab6, tab7, tab_spiff, tab_3pb = st.tabs([
         ":material/query_stats: Scorecard",
         ":material/trending_up: Trends",
         ":material/groups: Cohort Analysis",
@@ -888,7 +911,8 @@ else:
         ":material/list_alt: Integrated Cohort List",
         ":material/info: Metrics Guide",
         ":material/rocket_launch: Kickoff Analysis",
-        ":material/emoji_events: SPIFF Leaderboard"
+        ":material/emoji_events: SPIFF Leaderboard",
+        ":material/smart_toy: New Third-Party Bot Signals"
     ])
 
     with tab1:
@@ -1911,6 +1935,8 @@ else:
                 ('AI_STRATEGIST_NAME',                      'strategist'),
                 ('AI_STRATEGIST_MANAGER_NAME',              'strategist_manager'),
                 ('THIRD_PARTY_AI_BOT',                      'third_party_ai_agent'),
+                ('THIRD_PARTY_AI_BOT_FIRST_SEEN_DATE',      'third_party_ai_agent_first_seen_date'),
+                ('THIRD_PARTY_AI_BOT_LAST_SEEN_DATE',       'third_party_ai_agent_last_seen_date'),
                 ('CURRENT_PHASE',                           'current_phase'),
                 ('COHORT',                                  'usage_cohort_snapshot'),
                 ('MONTHLY_COHORT',                          'monthly_cohort'),
@@ -2667,6 +2693,110 @@ else:
                             members = sorted(strategists[strategists['TEAM'] == team_name]['FULL_NAME'].tolist())
                             st.markdown(f"**{team_name}** ({len(members)})")
                             st.markdown("\n".join(f"- {m}" for m in members))
+
+    with tab_3pb:
+        st.subheader(":material/smart_toy: New Third-Party Bot Signals")
+        st.caption(
+            "CRMs where a new (specific) third-party AI Agent first appeared during the most recent mart snapshot week. "
+            "A CRM may show up here even if it's had a different third-party AI Agent for a long time — what's flagged is when a *new* bot is added."
+        )
+
+        if st.session_state.global_data is None or len(st.session_state.global_data) == 0:
+            st.warning("No data loaded yet.")
+        else:
+            mart_full = st.session_state.global_data
+            latest_snap = pd.Timestamp(mart_full['SOURCE_SNAPSHOT_DATE'].max())
+            window_start = latest_snap - pd.Timedelta(days=6)  # 7-day window inclusive
+            st.markdown(
+                f"**Window:** {window_start.strftime('%Y-%m-%d')} → {latest_snap.strftime('%Y-%m-%d')}  \n"
+                f"**Latest mart snapshot:** {latest_snap.strftime('%Y-%m-%d')}"
+            )
+
+            tpb_df, tpb_err = load_third_party_bot_first_seen()
+            if tpb_err or tpb_df is None:
+                st.error(f"Could not load third-party bot data: {tpb_err}")
+            else:
+                # Identify NEW (CRM, bot) pairs: first_seen falls within the
+                # latest mart-snapshot week.
+                tpb_df['FIRST_SEEN_DATE'] = pd.to_datetime(tpb_df['FIRST_SEEN_DATE'], errors='coerce')
+                tpb_df['LAST_SEEN_DATE'] = pd.to_datetime(tpb_df['LAST_SEEN_DATE'], errors='coerce')
+                new_signals = tpb_df[
+                    (tpb_df['FIRST_SEEN_DATE'] >= window_start)
+                    & (tpb_df['FIRST_SEEN_DATE'] <= latest_snap)
+                ].copy()
+
+                if len(new_signals) == 0:
+                    st.info("No new third-party AI Agent signals detected in the latest mart-snapshot week.")
+                else:
+                    # Pull CRM enrichment from the latest mart snapshot.
+                    latest_mart = mart_full[mart_full['SOURCE_SNAPSHOT_DATE'] == latest_snap].copy()
+                    enrichment_cols = [
+                        'CRM_ACCOUNT_ID', 'CRM_ACCOUNT_NAME', 'INSTANCE_ACCOUNT_SUBDOMAIN',
+                        'CRM_NET_ARR_USD', 'CRM_ARR_BAND_BROAD', 'CRM_REGION', 'CRM_MARKET_SEGMENT',
+                        'CONSULTANT_NAME', 'AI_STRATEGIST_NAME',
+                        'CRM_IS_AI_AGENTS_ADVANCED_ADOPTED', 'CRM_IS_AI_AGENTS_PAID_ADOPTED',
+                        'CRM_IS_AI_AGENTS_ADVANCED_PENETRATED', 'CRM_IS_AI_AGENTS_PAID_PENETRATED',
+                    ]
+                    enrichment_cols = [c for c in enrichment_cols if c in latest_mart.columns]
+                    # Collapse to one row per CRM (subdomain becomes a comma-separated list)
+                    crm_enrichment = latest_mart[enrichment_cols].groupby('CRM_ACCOUNT_ID', as_index=False).agg(
+                        lambda s: ', '.join(sorted(set(str(x) for x in s.dropna()))) if s.name == 'INSTANCE_ACCOUNT_SUBDOMAIN' else s.iloc[0]
+                    )
+
+                    # Force matching dtypes for merge
+                    new_signals['CRM_ACCOUNT_ID'] = new_signals['CRM_ACCOUNT_ID'].astype(str)
+                    crm_enrichment['CRM_ACCOUNT_ID'] = crm_enrichment['CRM_ACCOUNT_ID'].astype(str)
+                    merged = new_signals.merge(crm_enrichment, on='CRM_ACCOUNT_ID', how='left')
+
+                    # Derive a current AIA adoption status for each CRM
+                    def aia_status(row):
+                        if row.get('CRM_IS_AI_AGENTS_ADVANCED_ADOPTED') is True:
+                            return 'Advanced adopted'
+                        if row.get('CRM_IS_AI_AGENTS_PAID_ADOPTED') is True:
+                            return 'Paid adopted'
+                        if row.get('CRM_IS_AI_AGENTS_ADVANCED_PENETRATED') is True:
+                            return 'Advanced penetrated'
+                        if row.get('CRM_IS_AI_AGENTS_PAID_PENETRATED') is True:
+                            return 'Paid penetrated'
+                        return 'Not penetrated'
+
+                    if all(c in merged.columns for c in ('CRM_IS_AI_AGENTS_ADVANCED_ADOPTED', 'CRM_IS_AI_AGENTS_PAID_ADOPTED')):
+                        merged['AIA Adoption Status'] = merged.apply(aia_status, axis=1)
+                    else:
+                        merged['AIA Adoption Status'] = 'unknown'
+
+                    merged['First Seen'] = merged['FIRST_SEEN_DATE'].dt.strftime('%Y-%m-%d')
+
+                    display_df = merged.rename(columns={
+                        'CRM_ACCOUNT_ID': 'CRM Account ID',
+                        'CRM_ACCOUNT_NAME': 'Account',
+                        'INSTANCE_ACCOUNT_SUBDOMAIN': 'Instance Subdomain(s)',
+                        'THIRD_PARTY_AI_BOT': 'New 3PB',
+                        'CRM_NET_ARR_USD': 'CRM Net ARR (USD)',
+                        'CRM_ARR_BAND_BROAD': 'ARR Band',
+                        'CRM_REGION': 'Region',
+                        'CRM_MARKET_SEGMENT': 'Segment',
+                        'CONSULTANT_NAME': 'Consultant',
+                        'AI_STRATEGIST_NAME': 'Strategist',
+                    })
+                    display_cols = [
+                        'Account', 'CRM Account ID', 'Instance Subdomain(s)', 'New 3PB', 'First Seen',
+                        'AIA Adoption Status',
+                        'CRM Net ARR (USD)', 'ARR Band', 'Region', 'Segment',
+                        'Consultant', 'Strategist',
+                    ]
+                    display_cols = [c for c in display_cols if c in display_df.columns]
+                    display_df = display_df[display_cols].sort_values(['First Seen', 'Account'], ascending=[False, True])
+
+                    st.markdown(f"**Rows:** {len(display_df):,}  ·  **Distinct CRMs:** {display_df['CRM Account ID'].nunique():,}")
+                    st.dataframe(display_df, hide_index=True, use_container_width=True, height=500)
+
+                    st.download_button(
+                        label=":material/download: Download New 3PB Signals (CSV)",
+                        data=display_df.to_csv(index=False).encode('utf-8'),
+                        file_name=f"new_3pb_signals_{latest_snap.strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                    )
 
 # Footer
 st.divider()
