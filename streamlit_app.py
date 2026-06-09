@@ -2755,6 +2755,11 @@ else:
                     & (tpb_df['FIRST_SEEN_DATE'] <= latest_snap)
                 ].copy()
 
+                # Exclude Forethought — it's noise for this signal.
+                new_signals = new_signals[
+                    ~new_signals['THIRD_PARTY_AI_BOT'].astype(str).str.strip().str.casefold().eq('forethought')
+                ]
+
                 if len(new_signals) == 0:
                     st.info("No new third-party AI Agent signals detected in the latest mart-snapshot week.")
                 else:
