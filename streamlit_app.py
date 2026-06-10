@@ -344,6 +344,29 @@ def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
     return pd.to_numeric(series, errors='coerce').fillna(0)
 
+def fiscal_quarter_start(date):
+    """Return the start date of the Zendesk fiscal quarter containing `date`.
+
+    Zendesk fiscal quarters:
+      Q1: Feb 1 - Apr 30
+      Q2: May 1 - Jul 31
+      Q3: Aug 1 - Oct 31
+      Q4: Nov 1 - Jan 31 (crosses calendar year)
+    """
+    ts = pd.Timestamp(date)
+    month = ts.month
+    if month in (2, 3, 4):
+        return pd.Timestamp(ts.year, 2, 1)
+    if month in (5, 6, 7):
+        return pd.Timestamp(ts.year, 5, 1)
+    if month in (8, 9, 10):
+        return pd.Timestamp(ts.year, 8, 1)
+    # Nov / Dec → Q4 starts this year's Nov 1
+    if month in (11, 12):
+        return pd.Timestamp(ts.year, 11, 1)
+    # January → Q4 started prior year's Nov 1
+    return pd.Timestamp(ts.year - 1, 11, 1)
+
 def calculate_scorecard_metrics(df):
     """
     Calculate all scorecard metrics from GlobalData CSV
@@ -974,9 +997,9 @@ else:
                             # Absolute change (for count metrics)
                             four_week_change = current - four_week_val
 
-                # QTD change (quarter-to-date)
+                # QTD change (quarter-to-date) — Zendesk fiscal quarters
                 qtd_change = None
-                quarter_start = pd.Timestamp(current_date.year, ((current_date.quarter - 1) * 3) + 1, 1)
+                quarter_start = fiscal_quarter_start(current_date)
                 qtd_data = scorecard_df_dated[scorecard_df_dated['Date'] >= quarter_start].sort_values('Date')
                 if len(qtd_data) >= 2:
                     qtd_first = qtd_data.iloc[0][metric_name]
@@ -1205,9 +1228,9 @@ This is the metric to watch when you want to know who's pacing toward overages o
                             four_week_pct = (four_week_val / total_four_weeks * 100)
                             four_week_change = current_pct - four_week_pct
 
-                    # QTD change (quarter-to-date) - as percentage points
+                    # QTD change (quarter-to-date) - as percentage points — Zendesk fiscal quarters
                     qtd_change = None
-                    quarter_start = pd.Timestamp(latest_date.year, ((latest_date.quarter - 1) * 3) + 1, 1)
+                    quarter_start = fiscal_quarter_start(latest_date)
                     qtd_data = cohort_data[cohort_data['Date'] >= quarter_start].sort_values('Date')
                     if len(qtd_data) >= 2:
                         qtd_first = qtd_data.iloc[0][value_col]
