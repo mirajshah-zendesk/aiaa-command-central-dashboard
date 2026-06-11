@@ -340,6 +340,112 @@ def load_third_party_bot_first_seen(_v=2):
     except Exception as e:
         return None, str(e)
 
+@st.cache_data(ttl=3600)
+def load_ar_utilization_aiscorecard():
+    """Pre-aggregated AR utilization metrics matching the Product Analytics
+    "AI Scorecard" GSheet. One row per source_snapshot_date with the WtdAvg
+    cycle-to-date utilization rate and the 28-day run rate.
+
+    Universe (per the AI Scorecard's canonical definition):
+      * Has 'Automated - resolution' SKU revenue (net_arr_usd > 0)
+      * core_base_plan IS NOT NULL (real paid customer)
+      * allowance_period_months > 1 (excludes monthly cycles)
+      * days_into_allowance_cycle > 28
+      * total_allowance > 0
+      * CRM-level total_allowance < 1M (excludes Rockstar-tier outliers)
+
+    NOT gated by AIA paid_penetrated — this is the broader AR-paying
+    universe. Sidebar global filters do NOT apply to these metrics; they
+    reflect the canonical scorecard population.
+
+    Scoped to the last ~7 months to keep the query manageable on
+    PUBLIC_ZENDESK_XS (~25s cold; cached for 1h).
+    """
+    try:
+        session = get_active_session()
+        query = """
+        WITH ar_sku_paid AS (
+            SELECT service_date, crm_account_id, SUM(net_arr_usd) AS net_arr_usd
+            FROM foundational.finance.fact_recurring_revenue_daily_snapshot_enriched
+            WHERE product_offering = 'Automated - resolution'
+              AND service_date >= DATEADD(month, -7, CURRENT_DATE())
+            GROUP BY ALL
+        ),
+        daily_grain AS (
+            SELECT
+                obp.source_snapshot_date,
+                obp.crm_account_id,
+                obp.instance_account_id,
+                obp.allowance_cycle_start_date,
+                obp.allowance_cycle_end_date,
+                obp.allowance_cycle_length_in_days,
+                obp.days_into_allowance_cycle,
+                obp.allowance_period_months,
+                obp.allowance_limit AS total_allowance,
+                obp.proportion_of_allowance_cycle_completed * obp.allowance_limit AS prorated_total_allowance,
+                obp.total_automated_resolutions_usage AS automated_resolutions_used,
+                LAG(obp.total_automated_resolutions_usage, 28) OVER (
+                    PARTITION BY obp.instance_account_id, obp.allowance_cycle_start_date, obp.allowance_cycle_end_date
+                    ORDER BY obp.source_snapshot_date
+                ) AS ar_used_28d_ago,
+                ars.net_arr_usd
+            FROM functional.eda_sales_marketing.outcome_based_pricing_allowance_usage_daily_snapshot obp
+            LEFT JOIN presentation.product_analytics.paid_customer_universe_daily_snapshot pcu
+                ON pcu.instance_account_id = obp.instance_account_id
+               AND pcu.source_snapshot_date = obp.source_snapshot_date
+            LEFT JOIN ar_sku_paid ars
+                ON ars.crm_account_id = obp.crm_account_id
+               AND ars.service_date = obp.source_snapshot_date
+            WHERE pcu.core_base_plan IS NOT NULL
+              AND obp.allowance_type = 'AUTOMATED_RESOLUTIONS'
+              AND obp.source_snapshot_date >= DATEADD(month, -7, CURRENT_DATE())
+              AND obp.allowance_period_months > 1
+        ),
+        crm_total AS (
+            SELECT source_snapshot_date, crm_account_id, SUM(total_allowance) AS crm_total
+            FROM daily_grain GROUP BY ALL
+        ),
+        filt AS (
+            SELECT g.*, c.crm_total
+            FROM daily_grain g
+            LEFT JOIN crm_total c
+                ON c.crm_account_id = g.crm_account_id
+               AND c.source_snapshot_date = g.source_snapshot_date
+            WHERE g.days_into_allowance_cycle > 28
+              AND g.total_allowance > 0
+              AND c.crm_total < 1000000
+              AND g.net_arr_usd > 0
+        ),
+        per_inst AS (
+            SELECT source_snapshot_date, instance_account_id, prorated_total_allowance, automated_resolutions_used,
+                CASE
+                    WHEN ar_used_28d_ago IS NULL THEN automated_resolutions_used
+                    WHEN automated_resolutions_used - ar_used_28d_ago < 0 THEN NULL
+                    ELSE automated_resolutions_used - ar_used_28d_ago
+                END AS ar_used_last_28d,
+                (28.0 / allowance_cycle_length_in_days) * total_allowance AS prorated_allowance_last_28d,
+                total_allowance
+            FROM filt
+        )
+        SELECT
+            source_snapshot_date,
+            COUNT(DISTINCT instance_account_id) AS num_instances,
+            SUM(LEAST(prorated_total_allowance, automated_resolutions_used))
+                / NULLIF(SUM(prorated_total_allowance), 0) AS cycle_to_date_util,
+            SUM(LEAST(prorated_allowance_last_28d, ar_used_last_28d))
+                / NULLIF(SUM(prorated_allowance_last_28d), 0) AS run_rate_28d
+        FROM per_inst
+        GROUP BY 1
+        ORDER BY 1
+        """
+        df = session.sql(query).to_pandas()
+        df.columns = [c.upper() for c in df.columns]
+        df['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(df['SOURCE_SNAPSHOT_DATE'])
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
+
 def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
     return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -407,6 +513,15 @@ def calculate_scorecard_metrics(df):
 
     # Get unique dates
     dates = df['SOURCE_SNAPSHOT_DATE'].unique()
+
+    # Pre-load AR utilization metrics from the canonical AI Scorecard SQL
+    # (separate from the AIAA mart so the universe matches Product Analytics'
+    # GSheet exactly). Indexed by snapshot date for O(1) lookup in the loop.
+    ar_util_df, _ar_util_err = load_ar_utilization_aiscorecard()
+    if ar_util_df is not None and len(ar_util_df) > 0:
+        ar_util_by_date = ar_util_df.set_index('SOURCE_SNAPSHOT_DATE')
+    else:
+        ar_util_by_date = None
 
     metrics_list = []
 
@@ -486,27 +601,20 @@ def calculate_scorecard_metrics(df):
         else:
             metrics['Median AR Rate'] = 0
 
-        # AR Utilization metrics — both 28-day run rate and cycle-to-date
-        # Formula (28-day run rate): SUM(AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED) / SUM(PRORATED_ALLOWANCE_LAST_28D)
-        # Formula (cycle-to-date): SUM(AUTOMATED_RESOLUTIONS_USED_NORMALIZED) / SUM(PRORATED_TOTAL_ALLOWANCE)
-        # Where: ARR>0, ALLOWANCE_PERIOD>=12, DAYS_INTO_CYCLE>28, TOTAL_ALLOWANCE<1M
-        # Note: Data already filtered by product type
-        ar_util_filter = (
-            (snapshot['AUTOMATED_RESOLUTIONS_NET_ARR_USD'] > 0) &
-            (snapshot['ALLOWANCE_PERIOD_MONTHS'] >= 12) &
-            (snapshot['DAYS_INTO_ALLOWANCE_CYCLE'] > 28) &
-            (snapshot['TOTAL_ALLOWANCE'] < 1000000)
-        )
-        if ar_util_filter.sum() > 0:
-            ar_util_rows = snapshot[ar_util_filter]
-            # 28-day run rate
-            num_28d = ar_util_rows['AUTOMATED_RESOLUTIONS_USED_LAST_28D_NORMALIZED'].sum()
-            den_28d = ar_util_rows['PRORATED_ALLOWANCE_LAST_28D'].sum()
-            metrics['AR Utilization Run Rate'] = (num_28d / den_28d) if den_28d > 0 else 0
-            # Cycle-to-date utilization
-            num_ctd = ar_util_rows['AUTOMATED_RESOLUTIONS_USED_NORMALIZED'].sum()
-            den_ctd = ar_util_rows['PRORATED_TOTAL_ALLOWANCE'].sum()
-            metrics['AR Utilization Cycle-to-Date'] = (num_ctd / den_ctd) if den_ctd > 0 else 0
+        # AR Utilization metrics come from the canonical AI Scorecard SQL
+        # (loaded once above), NOT the AIAA mart. This is intentional so the
+        # numbers match Product Analytics' GSheet exactly. Trade-off: sidebar
+        # global filters do NOT apply to these metrics. See caption on the
+        # Scorecard tab for the full explanation.
+        if ar_util_by_date is not None:
+            date_ts = pd.Timestamp(date)
+            if date_ts in ar_util_by_date.index:
+                row = ar_util_by_date.loc[date_ts]
+                metrics['AR Utilization Run Rate'] = float(row['RUN_RATE_28D']) if pd.notna(row['RUN_RATE_28D']) else 0
+                metrics['AR Utilization Cycle-to-Date'] = float(row['CYCLE_TO_DATE_UTIL']) if pd.notna(row['CYCLE_TO_DATE_UTIL']) else 0
+            else:
+                metrics['AR Utilization Run Rate'] = 0
+                metrics['AR Utilization Cycle-to-Date'] = 0
         else:
             metrics['AR Utilization Run Rate'] = 0
             metrics['AR Utilization Cycle-to-Date'] = 0
@@ -1154,9 +1262,18 @@ else:
                 metrics_table = metrics_table.set_index('Metric')
                 st.dataframe(metrics_table, use_container_width=True, height=min(len(table_data) * 35 + 38, 400))
 
-                # AR Utilization metric definitions — clarify the difference
-                # between the 28-day run rate and cycle-to-date views.
+                # AR Utilization caption + definitions. Caption flags the
+                # universe choice (matches Product Analytics' AI Scorecard) and
+                # the temporary global-filter limitation. Definitions go in the
+                # expander below.
                 if category == "📊 Business Metrics":
+                    st.caption(
+                        "📌 *AR Utilization metrics use the Product Analytics AI Scorecard universe "
+                        "(all AR-paying customers — paid SKU, annual cycle, 28+ days into cycle, CRM total allowance < 1M). "
+                        "These metrics are NOT gated by AIA Paid-penetration like other metrics on this dashboard. "
+                        "Note: sidebar global filters (Region, Industry, Subco, etc.) do not currently apply to these metrics — "
+                        "this is a known limitation of the current implementation, planned for follow-up.*"
+                    )
                     with st.expander("ℹ️ AR Utilization metric definitions", expanded=False):
                         st.markdown(
                             """
@@ -1174,7 +1291,7 @@ This is the metric to watch when you want to know who's pacing toward overages o
 - A customer who started slow and is ramping recently → low cycle-to-date, high 28-day run rate.
 - A customer who used their allowance early and slowed → high cycle-to-date, low 28-day run rate.
 
-**Universe (both metrics):** AIA Paid–penetrated instances, paying for the AR SKU, with annual cycles, 28+ days into their cycle, and total allowance under 1M ARs (excludes Rockstar-tier outliers).
+**Universe (both metrics):** all customers paying for the AR SKU (per the AI Scorecard's canonical definition) — `core_base_plan IS NOT NULL`, `Automated - resolution` SKU revenue > 0, allowance period > 1 month, 28+ days into cycle, and CRM-level total allowance < 1M (excludes Rockstar-tier outliers). NOT scoped to AIA paid-penetrated.
 
 **Both metrics use the same per-instance normalization** — each instance is capped at 100% of its prorated allowance so a single large customer can't drag the weighted average past 100%.
 """
