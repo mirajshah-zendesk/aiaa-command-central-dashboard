@@ -767,58 +767,66 @@ with st.sidebar:
                 st.error(f"Error with date filter: {e}")
                 selected_date = None
 
-        # Region filter
-        if 'CRM_REGION' in gdf.columns:
-            region_values = gdf['CRM_REGION'].dropna().unique()
-            regions = ['All'] + sorted([str(r) for r in region_values if r is not None])
-            selected_region = st.selectbox("Region", regions, key="region_filter")
-        else:
-            selected_region = 'All'
+        # All categorical filters below are multiselects wrapped in collapsed
+        # expanders. Defaults are all options selected (= include everything,
+        # matches the prior single-select "All" behavior). Empty selection =
+        # no rows match.
+        def _multiselect_filter(label, column, default=None, help_text=None):
+            """Render a single-column multiselect filter inside an expander.
+            Returns the user's selected values (list)."""
+            if column not in gdf.columns:
+                return []
+            values = gdf[column].dropna().unique()
+            options = sorted([str(v) for v in values if v is not None])
+            chosen_default = default if default is not None else options
+            with st.expander(label, expanded=False):
+                return st.multiselect(
+                    label,
+                    options=options,
+                    default=chosen_default,
+                    key=f"{column.lower()}_filter",
+                    label_visibility="collapsed",
+                    help=help_text,
+                )
 
-        # ARR Band filter (multi-select — defaults to >=12K, hiding the
-        # noisy <12K band but letting users add it back if they want)
+        selected_regions = _multiselect_filter(
+            "Region", 'CRM_REGION',
+            help_text="Defaults to all regions. Deselect everything to show no rows.",
+        )
+
+        # ARR Band — keep its curated default (12K+ bands only).
         if 'CRM_ARR_BAND_BROAD' in gdf.columns:
             arr_values = gdf['CRM_ARR_BAND_BROAD'].dropna().unique()
             arr_bands = sorted([str(a) for a in arr_values if a is not None])
             arr_default = [b for b in arr_bands if b in ('b) 12K-100K', 'c) 100K+')]
-            selected_arr_bands = st.multiselect(
-                "ARR Band", arr_bands, default=arr_default, key="arr_filter",
-                help="Defaults to 12K+ ARR bands. Add `<12K` to include all customers, or remove a band to narrow further.",
-            )
+            with st.expander("ARR Band", expanded=False):
+                selected_arr_bands = st.multiselect(
+                    "ARR Band", arr_bands, default=arr_default, key="arr_filter",
+                    label_visibility="collapsed",
+                    help="Defaults to 12K+ ARR bands. Add `<12K` to include all customers, or remove a band to narrow further.",
+                )
         else:
             selected_arr_bands = []
 
-        # Responsibility filter
-        if 'RESPONSIBILITY' in gdf.columns:
-            resp_values = gdf['RESPONSIBILITY'].dropna().unique()
-            responsibilities = ['All'] + sorted([str(r) for r in resp_values if r is not None])
-            selected_responsibility = st.selectbox("Responsibility", responsibilities, key="resp_filter")
-        else:
-            selected_responsibility = 'All'
+        selected_responsibilities = _multiselect_filter(
+            "Responsibility", 'RESPONSIBILITY',
+            help_text="Defaults to all responsibilities. Deselect everything to show no rows.",
+        )
 
-        # Segment filter
-        if 'CRM_MARKET_SEGMENT' in gdf.columns:
-            segment_values = gdf['CRM_MARKET_SEGMENT'].dropna().unique()
-            segments = ['All'] + sorted([str(s) for s in segment_values if s is not None])
-            selected_segment = st.selectbox("Segment", segments, key="segment_filter")
-        else:
-            selected_segment = 'All'
+        selected_segments = _multiselect_filter(
+            "Segment", 'CRM_MARKET_SEGMENT',
+            help_text="Defaults to all segments. Deselect everything to show no rows.",
+        )
 
-        # Sub-Region filter
-        if 'CRM_SUB_REGION' in gdf.columns:
-            subregion_values = gdf['CRM_SUB_REGION'].dropna().unique()
-            subregions = ['All'] + sorted([str(s) for s in subregion_values if s is not None])
-            selected_subregion = st.selectbox("Sub-Region", subregions, key="subregion_filter")
-        else:
-            selected_subregion = 'All'
+        selected_subregions = _multiselect_filter(
+            "Sub-Region", 'CRM_SUB_REGION',
+            help_text="Defaults to all sub-regions. Deselect everything to show no rows.",
+        )
 
-        # Industry filter
-        if 'CRM_INDUSTRY' in gdf.columns:
-            industry_values = gdf['CRM_INDUSTRY'].dropna().unique()
-            industries = ['All'] + sorted([str(i) for i in industry_values if i is not None])
-            selected_industry = st.selectbox("Industry", industries, key="industry_filter")
-        else:
-            selected_industry = 'All'
+        selected_industries = _multiselect_filter(
+            "Industry", 'CRM_INDUSTRY',
+            help_text="Defaults to all industries. Deselect everything to show no rows.",
+        )
 
         # Subco filter — multiselect across SUBCO_ORGANIZATION values plus
         # an explicit "In-house" option for the NULL bucket. Defaults to all.
@@ -895,24 +903,25 @@ else:
     if 'selected_date' in locals() and selected_date is not None:
         display_selected_date = selected_date
 
-    # Apply NON-DATE filters first (keep all dates for comparison calculations)
-    if 'selected_region' in locals() and selected_region != 'All':
-        gdf = gdf[gdf['CRM_REGION'] == selected_region]
+    # Apply NON-DATE filters first (keep all dates for comparison calculations).
+    # Multiselect convention: empty selection = no rows match.
+    if 'selected_regions' in locals() and 'CRM_REGION' in gdf.columns:
+        gdf = gdf[gdf['CRM_REGION'].isin(selected_regions)]
 
     if 'selected_arr_bands' in locals() and selected_arr_bands:
         gdf = gdf[gdf['CRM_ARR_BAND_BROAD'].isin(selected_arr_bands)]
 
-    if 'selected_responsibility' in locals() and selected_responsibility != 'All':
-        gdf = gdf[gdf['RESPONSIBILITY'] == selected_responsibility]
+    if 'selected_responsibilities' in locals() and 'RESPONSIBILITY' in gdf.columns:
+        gdf = gdf[gdf['RESPONSIBILITY'].isin(selected_responsibilities)]
 
-    if 'selected_segment' in locals() and selected_segment != 'All':
-        gdf = gdf[gdf['CRM_MARKET_SEGMENT'] == selected_segment]
+    if 'selected_segments' in locals() and 'CRM_MARKET_SEGMENT' in gdf.columns:
+        gdf = gdf[gdf['CRM_MARKET_SEGMENT'].isin(selected_segments)]
 
-    if 'selected_subregion' in locals() and selected_subregion != 'All':
-        gdf = gdf[gdf['CRM_SUB_REGION'] == selected_subregion]
+    if 'selected_subregions' in locals() and 'CRM_SUB_REGION' in gdf.columns:
+        gdf = gdf[gdf['CRM_SUB_REGION'].isin(selected_subregions)]
 
-    if 'selected_industry' in locals() and selected_industry != 'All':
-        gdf = gdf[gdf['CRM_INDUSTRY'] == selected_industry]
+    if 'selected_industries' in locals() and 'CRM_INDUSTRY' in gdf.columns:
+        gdf = gdf[gdf['CRM_INDUSTRY'].isin(selected_industries)]
 
     # Subco filter (multiselect) — empty selection means no rows match.
     if 'selected_subcos' in locals() and 'SUBCO_ORGANIZATION' in gdf.columns:
