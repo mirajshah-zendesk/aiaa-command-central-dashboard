@@ -2064,7 +2064,17 @@ This is the metric to watch when you want to know who's pacing toward overages o
         selected_columns = st.multiselect("Select columns", all_columns, default=default_cols if default_cols else all_columns[:10])
 
         if selected_columns:
-            st.dataframe(explorer_df[selected_columns].head(1000), use_container_width=True, height=500)
+            export_df = explorer_df[selected_columns]
+            st.caption(f"Showing first 1,000 of {len(export_df):,} rows. Download full dataset below.")
+            st.dataframe(export_df.head(1000), use_container_width=True, height=500)
+
+            st.download_button(
+                label=":material/download: Download Full Filtered Dataset (CSV)",
+                data=export_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"aiaa_data_explorer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                help="Downloads ALL rows matching the current filters and search, not just the 1,000 visible above.",
+            )
 
     with tab_icl:
         st.subheader("Integrated Cohort List")
