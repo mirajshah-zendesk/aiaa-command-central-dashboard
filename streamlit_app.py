@@ -3014,7 +3014,7 @@ This is the metric to watch when you want to know who's pacing toward overages o
             # datetime64 so the snapshot-date filter below actually matches.
             mart_full['SOURCE_SNAPSHOT_DATE'] = pd.to_datetime(mart_full['SOURCE_SNAPSHOT_DATE'])
             latest_snap = mart_full['SOURCE_SNAPSHOT_DATE'].max()
-            window_start = latest_snap - pd.Timedelta(days=6)  # 7-day window inclusive
+            window_start = latest_snap - pd.Timedelta(days=7)  # match Adoption Loss / Scorecard WoW (7 days prior)
             st.markdown(
                 f"**Window:** {window_start.strftime('%Y-%m-%d')} → {latest_snap.strftime('%Y-%m-%d')}  \n"
                 f"**Latest mart snapshot:** {latest_snap.strftime('%Y-%m-%d')}"
