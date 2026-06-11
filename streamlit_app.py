@@ -1268,8 +1268,9 @@ else:
                 # expander below.
                 if category == "📊 Business Metrics":
                     st.caption(
-                        "📌 *AR Utilization metrics use the Product Analytics AI Scorecard universe "
-                        "(all AR-paying customers — paid SKU, annual cycle, 28+ days into cycle, CRM total allowance < 1M). "
+                        "📌 *AR Utilization metrics use the Product Analytics "
+                        "[AI Scorecard](https://docs.google.com/spreadsheets/d/1GYdqE2GL9Eq9ROTgsC7-PNnfWOCmdCnKTeNa65Afv-0/edit?usp=sharing) "
+                        "universe (all AR-paying customers — paid SKU, annual cycle, 28+ days into cycle, CRM total allowance < 1M). "
                         "These metrics are NOT gated by AIA Paid-penetration like other metrics on this dashboard. "
                         "Note: sidebar global filters (Region, Industry, Subco, etc.) do not currently apply to these metrics — "
                         "this is a known limitation of the current implementation, planned for follow-up.*"
