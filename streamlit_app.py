@@ -1567,7 +1567,11 @@ This is the metric to watch when you want to know who's pacing toward overages o
                 st.warning("Need at least 2 snapshots to compare adoption changes. Currently only have 1 snapshot.")
             else:
                 latest_date = available_dates[-1]
-                previous_date = available_dates[-2]
+                target_previous_date = latest_date - pd.Timedelta(days=7)
+                if target_previous_date in available_dates:
+                    previous_date = target_previous_date
+                else:
+                    previous_date = available_dates[-2]
 
                 st.markdown(f"**Comparing:** {previous_date.strftime('%Y-%m-%d')} → {latest_date.strftime('%Y-%m-%d')}")
 
