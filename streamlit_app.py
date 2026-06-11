@@ -822,18 +822,21 @@ with st.sidebar:
 
         # Subco filter — multiselect across SUBCO_ORGANIZATION values plus
         # an explicit "In-house" option for the NULL bucket. Defaults to all.
+        # Wrapped in an expander to keep chips out of the default sidebar view.
         IN_HOUSE_LABEL = 'In-house (no subco)'
         if 'SUBCO_ORGANIZATION' in gdf.columns:
             subco_values = gdf['SUBCO_ORGANIZATION'].dropna().unique()
             subco_options = [IN_HOUSE_LABEL] + sorted([str(s) for s in subco_values if s is not None])
-            selected_subcos = st.multiselect(
-                "Subco",
-                options=subco_options,
-                default=subco_options,
-                key="subco_filter",
-                help="Filter by subco organization. 'In-house' covers customers with no subco assigned. "
-                     "Deselect everything to show no rows.",
-            )
+            with st.expander("Subco", expanded=False):
+                selected_subcos = st.multiselect(
+                    "Subco",
+                    options=subco_options,
+                    default=subco_options,
+                    key="subco_filter",
+                    label_visibility="collapsed",
+                    help="Filter by subco organization. 'In-house' covers customers with no subco assigned. "
+                         "Deselect everything to show no rows.",
+                )
         else:
             selected_subcos = []
 
