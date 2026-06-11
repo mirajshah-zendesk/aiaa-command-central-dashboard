@@ -2068,6 +2068,17 @@ This is the metric to watch when you want to know who's pacing toward overages o
             st.caption(f"Showing first 1,000 of {len(export_df):,} rows. Download full dataset below.")
             st.dataframe(export_df.head(1000), use_container_width=True, height=500)
 
+            # Warn if the export risks slow / failed Google Sheets import.
+            # GSheet hard cap is 10M cells; imports start getting slow around 1M.
+            cell_count = len(export_df) * len(selected_columns)
+            if cell_count >= 1_000_000:
+                st.warning(
+                    f"⚠️ Large export: {len(export_df):,} rows × {len(selected_columns)} columns = "
+                    f"{cell_count:,} cells. Imports into Google Sheets get slow above ~1M cells "
+                    f"and Sheets has a hard limit of 10M cells. Consider deselecting columns you "
+                    f"don't need, or narrowing your filters to reduce rows."
+                )
+
             st.download_button(
                 label=":material/download: Download Full Filtered Dataset (CSV)",
                 data=export_df.to_csv(index=False).encode('utf-8'),
