@@ -1574,6 +1574,7 @@ This is the metric to watch when you want to know who's pacing toward overages o
                     previous_date = available_dates[-2]
 
                 st.markdown(f"**Comparing:** {previous_date.strftime('%Y-%m-%d')} → {latest_date.strftime('%Y-%m-%d')}")
+                st.caption("Always compares the latest snapshot to 7 days prior. Not affected by the As of Date filter.")
 
                 # Get snapshots
                 latest_snapshot = gdf_sorted[gdf_sorted['SOURCE_SNAPSHOT_DATE'] == latest_date].copy()
