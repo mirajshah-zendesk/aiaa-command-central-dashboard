@@ -820,6 +820,23 @@ with st.sidebar:
         else:
             selected_industry = 'All'
 
+        # Subco filter — multiselect across SUBCO_ORGANIZATION values plus
+        # an explicit "In-house" option for the NULL bucket. Defaults to all.
+        IN_HOUSE_LABEL = 'In-house (no subco)'
+        if 'SUBCO_ORGANIZATION' in gdf.columns:
+            subco_values = gdf['SUBCO_ORGANIZATION'].dropna().unique()
+            subco_options = [IN_HOUSE_LABEL] + sorted([str(s) for s in subco_values if s is not None])
+            selected_subcos = st.multiselect(
+                "Subco",
+                options=subco_options,
+                default=subco_options,
+                key="subco_filter",
+                help="Filter by subco organization. 'In-house' covers customers with no subco assigned. "
+                     "Deselect everything to show no rows.",
+            )
+        else:
+            selected_subcos = []
+
         # AI Expert Project filter — does the CRM have an AIE project?
         # Uses the same per-CRM project resolver as the ICL tab.
         selected_aie_project = st.selectbox(
@@ -893,6 +910,17 @@ else:
 
     if 'selected_industry' in locals() and selected_industry != 'All':
         gdf = gdf[gdf['CRM_INDUSTRY'] == selected_industry]
+
+    # Subco filter (multiselect) — empty selection means no rows match.
+    if 'selected_subcos' in locals() and 'SUBCO_ORGANIZATION' in gdf.columns:
+        include_in_house = IN_HOUSE_LABEL in selected_subcos
+        named_subcos = [s for s in selected_subcos if s != IN_HOUSE_LABEL]
+        subco_mask = pd.Series(False, index=gdf.index)
+        if include_in_house:
+            subco_mask |= gdf['SUBCO_ORGANIZATION'].isna()
+        if named_subcos:
+            subco_mask |= gdf['SUBCO_ORGANIZATION'].isin(named_subcos)
+        gdf = gdf[subco_mask]
 
     # AI Expert Project filter — membership test against the canonical
     # one-row-per-CRM AIE project set.
