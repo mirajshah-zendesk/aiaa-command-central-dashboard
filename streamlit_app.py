@@ -450,6 +450,39 @@ def clean_numeric_column(series):
     """Convert a series to numeric, handling errors gracefully"""
     return pd.to_numeric(series, errors='coerce').fillna(0)
 
+
+# Cohort bucket mapping — used by the Cohort Analysis tab to roll up the
+# fine-grained cohort labels into the higher-level grouping that matches
+# the canonical AIAA scorecard GSheet. Cohorts not in this dict pass
+# through under their own label (e.g., the two "N/A, ..." cohorts).
+COHORT_BUCKET_MAP = {
+    'Adopted Best: 60%+ AR Rate':                                 'Adopted Better & Best',
+    'Adopted Better: 45%-60% AR Rate':                            'Adopted Better & Best',
+    'Cohort 1: <60 day tenure':                                   'No AI agent launched',
+    'Cohort 2: No bot launched (60+ day tenure)':                 'No AI agent launched',
+    'Cohort 3: Gen2 Messaging':                                   'Gen2 Messaging',
+    'Cohort 4: Email only':                                       'Email only',
+    'Cohort 5: Gen3 Messaging & No Intents w/ Procedures':        'Gen 3 messaging - unadopted',
+    'Cohort 6: Gen3 Messaging & Intents w/ Procedures':           'Gen 3 messaging - unadopted',
+    'Cohort 7: Gen3 Messaging & 30%-45% AR Rate':                 'Gen 3 messaging - unadopted',
+}
+
+# Default display order for buckets (top → bottom on the table).
+COHORT_BUCKET_ORDER = [
+    'Adopted Better & Best',
+    'No AI agent launched',
+    'Gen2 Messaging',
+    'Email only',
+    'Gen 3 messaging - unadopted',
+]
+
+
+def cohort_to_bucket(cohort):
+    """Return the bucket label for a cohort. Cohorts not in the map (e.g.
+    'N/A, not penetrated', 'N/A, no chat interaction...') pass through as
+    their own bucket label."""
+    return COHORT_BUCKET_MAP.get(cohort, cohort)
+
 def fiscal_quarter_start(date):
     """Return the start date of the Zendesk fiscal quarter containing `date`.
 
@@ -1322,15 +1355,34 @@ This is the metric to watch when you want to know who's pacing toward overages o
         # Calculate cohort metrics (use full date range for calculations)
         with st.spinner("Calculating cohort metrics..."):
             try:
-                cohort_df = calculate_cohort_metrics(gdf)
+                cohort_df_raw = calculate_cohort_metrics(gdf)
             except Exception as e:
                 st.error(f"Error calculating cohort metrics: {e}")
                 st.exception(e)
                 st.stop()
 
-        if len(cohort_df) == 0:
+        if len(cohort_df_raw) == 0:
             st.warning("No cohort data available. Please ensure the 'COHORT' column exists in your data.")
         else:
+            # View toggle — bucket view (default) groups individual cohorts
+            # into higher-level buckets matching the canonical AIAA GSheet.
+            # Individual view shows one row per fine-grained cohort.
+            cohort_view = st.radio(
+                "View",
+                options=['Bucket view', 'Individual cohort view'],
+                horizontal=True,
+                key='cohort_view_toggle',
+                help="Bucket view aggregates related cohorts into higher-level groups (Adopted Better & Best, etc.). Individual view shows the underlying cohorts.",
+            )
+
+            if cohort_view == 'Bucket view':
+                # Re-aggregate cohort_df at bucket grain by summing # Customers
+                # and # Instances within each (Date, Bucket).
+                cohort_df = cohort_df_raw.copy()
+                cohort_df['Cohort'] = cohort_df['Cohort'].map(cohort_to_bucket)
+                cohort_df = cohort_df.groupby(['Date', 'Cohort'], as_index=False)[['# Customers', '# Instances']].sum()
+            else:
+                cohort_df = cohort_df_raw.copy()
             # Use the selected date if available, otherwise get latest date
             if display_selected_date is not None:
                 latest_date = pd.to_datetime(display_selected_date)
@@ -1410,11 +1462,21 @@ This is the metric to watch when you want to know who's pacing toward overages o
                 st.markdown("### 📊 Customer & Instance Counts by Cohort")
                 st.caption("**# Customers** = distinct CRM accounts in the cohort. **# Instances** = distinct instance subdomains in the cohort.")
 
+                # Display order: in bucket view, follow COHORT_BUCKET_ORDER and
+                # append any pass-through (N/A) cohorts at the end.
+                # Individual view: alphabetical.
+                if cohort_view == 'Bucket view':
+                    present = list(latest_cohorts['Cohort'].unique())
+                    cohort_display_order = [b for b in COHORT_BUCKET_ORDER if b in present]
+                    cohort_display_order += sorted([c for c in present if c not in COHORT_BUCKET_ORDER])
+                else:
+                    cohort_display_order = sorted(latest_cohorts['Cohort'].unique())
+
                 table_data = []
                 # First pass: collect raw numbers for percentage calculation
                 cohort_raw_customers = {}
                 cohort_raw_instances = {}
-                for cohort in sorted(latest_cohorts['Cohort'].unique()):
+                for cohort in cohort_display_order:
                     cohort_data = latest_cohorts[latest_cohorts['Cohort'] == cohort]
                     if len(cohort_data) > 0:
                         cohort_raw_customers[cohort] = cohort_data.iloc[0]['# Customers']
@@ -1424,7 +1486,7 @@ This is the metric to watch when you want to know who's pacing toward overages o
                 total_instances = sum(cohort_raw_instances.values())
 
                 # Second pass: build table with percentages
-                for cohort in sorted(latest_cohorts['Cohort'].unique()):
+                for cohort in cohort_display_order:
                     cust_current, cust_wow, cust_four_week, cust_qtd = calculate_cohort_changes(cohort, '# Customers')
                     inst_current, inst_wow, inst_four_week, inst_qtd = calculate_cohort_changes(cohort, '# Instances')
                     if cust_current is not None:
@@ -1469,6 +1531,14 @@ This is the metric to watch when you want to know who's pacing toward overages o
                 cohort_pivot = cohort_df.pivot(index='Date', columns='Cohort', values=metric_choice)
                 cohort_pivot = cohort_pivot.sort_index(ascending=False)
                 cohort_pivot.index = pd.to_datetime(cohort_pivot.index).strftime('%Y-%m-%d')
+
+                # In bucket view, order columns by COHORT_BUCKET_ORDER and put
+                # any pass-through (N/A) cohorts at the end.
+                if cohort_view == 'Bucket view':
+                    present_cols = list(cohort_pivot.columns)
+                    pivot_col_order = [b for b in COHORT_BUCKET_ORDER if b in present_cols]
+                    pivot_col_order += sorted([c for c in present_cols if c not in COHORT_BUCKET_ORDER])
+                    cohort_pivot = cohort_pivot[pivot_col_order]
 
                 st.dataframe(cohort_pivot, use_container_width=True, height=400)
 
