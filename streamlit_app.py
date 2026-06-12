@@ -522,9 +522,9 @@ def calculate_scorecard_metrics(df):
     # Clean numeric columns
     numeric_columns = [
         'AUTOMATED_RESOLUTIONS_PAID', 'BOT_INTERACTIONS_PAID', 'TOTAL_CREATED_TICKETS_28D',
-        'EMAIL_AUTOMATED_RESOLUTIONS_PAID', 'MSG_AUTOMATED_RESOLUTIONS_PAID',
-        'EMAIL_BOT_INTERACTIONS_PAID', 'MSG_BOT_INTERACTIONS_PAID',
-        'EMAIL_AR_RATE_PAID', 'MSG_AR_RATE_PAID', 'AR_RATE_PAID',
+        'EMAIL_AUTOMATED_RESOLUTIONS_PAID', 'MSG_AUTOMATED_RESOLUTIONS_PAID', 'VOICE_AUTOMATED_RESOLUTIONS_PAID',
+        'EMAIL_BOT_INTERACTIONS_PAID', 'MSG_BOT_INTERACTIONS_PAID', 'VOICE_BOT_INTERACTIONS_PAID',
+        'EMAIL_AR_RATE_PAID', 'MSG_AR_RATE_PAID', 'VOICE_AR_RATE_PAID', 'AR_RATE_PAID',
         'OVERALL_BOT_DEPLOYED_SHARE', 'ACTIVE_INTEGRATIONS_28D',
         'TOP_BOX_5_STAR_28D', 'TOTAL_RESPONSES_28D', 'TENURE_MONTHS',
         'AUTOMATED_RESOLUTIONS_NET_ARR_USD', 'ALLOWANCE_PERIOD_MONTHS',
@@ -668,6 +668,15 @@ def calculate_scorecard_metrics(df):
             metrics['Median AR Rate - Messaging'] = snapshot[msg_ar_filter]['MSG_AR_RATE_PAID'].median()
         else:
             metrics['Median AR Rate - Messaging'] = 0
+
+        if 'VOICE_AR_RATE_PAID' in snapshot.columns:
+            voice_ar_filter = snapshot['VOICE_AR_RATE_PAID'] > 0
+            if voice_ar_filter.sum() > 0:
+                metrics['Median AR Rate - Voice'] = snapshot[voice_ar_filter]['VOICE_AR_RATE_PAID'].median()
+            else:
+                metrics['Median AR Rate - Voice'] = 0
+        else:
+            metrics['Median AR Rate - Voice'] = 0
 
         # AR Rate buckets - Count unique instances (not rows)
         # Formula: AR>0, AR<0.3 (data already filtered by product type)
@@ -1243,6 +1252,7 @@ else:
                     ("Median AR Rate", "Median AR Rate", "percent"),
                     ("Median AR Rate - Email", "Median AR Rate - Email", "percent"),
                     ("Median AR Rate - Messaging", "Median AR Rate - Messaging", "percent"),
+                    ("Median AR Rate - Voice", "Median AR Rate - Voice", "percent"),
                     ("Instances AR 0-30%", "Instances AR 0-30%", "number"),
                     ("Instances AR 30%+", "Instances AR 30%+", "number"),
                     ("Total ARs (28d)", "Total ARs (28d)", "number"),
