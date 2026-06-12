@@ -550,7 +550,11 @@ def calculate_scorecard_metrics(df):
     # Pre-load AR utilization metrics from the canonical AI Scorecard SQL
     # (separate from the AIAA mart so the universe matches Product Analytics'
     # GSheet exactly). Indexed by snapshot date for O(1) lookup in the loop.
-    ar_util_df, _ar_util_err = load_ar_utilization_aiscorecard()
+    # Stash the error in session_state so the Scorecard tab can surface it as
+    # a visible banner — silent failure made permission issues invisible to
+    # stakeholders, who saw blank AR Util fields with no explanation.
+    ar_util_df, ar_util_err = load_ar_utilization_aiscorecard()
+    st.session_state['ar_util_err'] = ar_util_err
     if ar_util_df is not None and len(ar_util_df) > 0:
         ar_util_by_date = ar_util_df.set_index('SOURCE_SNAPSHOT_DATE')
     else:
@@ -1300,6 +1304,18 @@ else:
                 # the temporary global-filter limitation. Definitions go in the
                 # expander below.
                 if category == "📊 Business Metrics":
+                    # Surface AR Util loader errors visibly. Most common cause:
+                    # the Snowflake role running this Streamlit app doesn't have
+                    # SELECT on one of the underlying tables. Show the raw error
+                    # so stakeholders can hand it to whoever manages role grants.
+                    ar_util_err = st.session_state.get('ar_util_err')
+                    if ar_util_err:
+                        st.error(
+                            f"⚠️ **AR Utilization metrics failed to load** — values shown above will be 0%.\n\n"
+                            f"This usually means your Snowflake role is missing SELECT access on one of the underlying tables. "
+                            f"Share the error below with your Snowflake admin:\n\n"
+                            f"```\n{ar_util_err}\n```"
+                        )
                     st.caption(
                         "📌 *AR Utilization metrics use the Product Analytics "
                         "[AI Scorecard](https://docs.google.com/spreadsheets/d/1GYdqE2GL9Eq9ROTgsC7-PNnfWOCmdCnKTeNa65Afv-0/edit?usp=sharing) "
